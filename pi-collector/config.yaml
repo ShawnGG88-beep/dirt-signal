@@ -1,0 +1,8 @@
+# Device registered in Supabase (see devices table)
+device_name: pi-garden-01
+
+# mock | real (real raises NotImplementedError until sensors are wired)
+sensor_mode: mock
+
+# Production: 900 (15 minutes). Shorter interval for local development / smoke tests.
+read_interval_seconds: 30

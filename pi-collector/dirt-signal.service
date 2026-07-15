@@ -1,0 +1,16 @@
+[Unit]
+Description=Dirt Signal soil sensor collector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/dirt-signal/pi-collector
+EnvironmentFile=/home/pi/dirt-signal/pi-collector/.env
+ExecStart=/home/pi/dirt-signal/pi-collector/.venv/bin/python collector.py
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

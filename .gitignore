@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+*.egg-info/
+dist/
+build/
+
+# Node / Tauri
+node_modules/
+desktop/dist/
+desktop/src-tauri/target/
+
+# ML artefacts
+ml-backend/model/registry/*.pkl
+ml-backend/model/registry/*.joblib
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Logs
+*.log
