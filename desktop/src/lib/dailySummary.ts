@@ -6,16 +6,20 @@ import {
   AMBIENT_TEMP_DAY_MIN_C,
   AMBIENT_TEMP_NIGHT_MAX_C,
   AMBIENT_TEMP_NIGHT_MIN_C,
-  K_TARGET,
-  N_TARGET,
-  P_TARGET,
+  DEFAULT_CROP_TYPE,
+  DEFAULT_LIFECYCLE_STAGE,
+  getScoringSemantic,
+  npkReferenceLabel,
+  type ScoringSemantic,
 } from "./growingConstants";
 import {
+  getAmbientBoundsForProfile,
+  getMetricBoundsForProfile,
   METRICS,
   type MetricKey,
   type MetricBounds,
 } from "./metrics";
-import { isOutOfBounds } from "./stats";
+import { isFlaggedAgainstBand } from "./stats";
 
 export interface MetricDaySummary {
   key: string;
@@ -28,6 +32,8 @@ export interface MetricDaySummary {
   /** True when this row participates in pass/fail flagging. */
   flaggable: boolean;
   outOfBounds: boolean;
+  /** Distinct from outOfBounds under restraint: elevated, not broken. */
+  elevated?: boolean;
   bounds: MetricBounds | null;
   /** Human-readable reference shown in the Reports table. */
   referenceLabel: string;
@@ -48,8 +54,15 @@ function localDayKey(iso: string): string {
   return `${y}-${m}-${day}`;
 }
 
-function formatBoundsLabel(bounds: MetricBounds, unit: string): string {
+function formatBoundsLabel(
+  bounds: MetricBounds,
+  unit: string,
+  scoringSemantic: ScoringSemantic,
+): string {
   const suffix = unit ? ` ${unit}` : "";
+  if (scoringSemantic === "restraint") {
+    return `watch above ${bounds.max}${suffix}`;
+  }
   return `${bounds.min}-${bounds.max}${suffix}`;
 }
 
@@ -73,6 +86,7 @@ function summariseFlatMetric(
   label: string,
   unit: string,
   bounds: MetricBounds | null,
+  scoringSemantic: ScoringSemantic,
 ): MetricDaySummary {
   const flaggable = bounds !== null;
   if (values.length === 0) {
@@ -86,21 +100,24 @@ function summariseFlatMetric(
       max: null,
       flaggable,
       outOfBounds: false,
+      elevated: false,
       bounds,
       referenceLabel: bounds
-        ? formatBoundsLabel(bounds, unit)
+        ? formatBoundsLabel(bounds, unit, scoringSemantic)
         : "n/a",
     };
   }
   const min = Math.min(...values);
   const max = Math.max(...values);
   const mean = values.reduce((s, v) => s + v, 0) / values.length;
-  const outOfBounds =
+  const flagged =
     flaggable &&
     bounds !== null &&
-    (isOutOfBounds(min, bounds) ||
-      isOutOfBounds(max, bounds) ||
-      isOutOfBounds(mean, bounds));
+    (isFlaggedAgainstBand(min, bounds, scoringSemantic) ||
+      isFlaggedAgainstBand(max, bounds, scoringSemantic) ||
+      isFlaggedAgainstBand(mean, bounds, scoringSemantic));
+  const elevated =
+    flagged && scoringSemantic === "restraint";
   return {
     key,
     label,
@@ -110,20 +127,33 @@ function summariseFlatMetric(
     min,
     max,
     flaggable,
-    outOfBounds,
+    outOfBounds: flagged && !elevated,
+    elevated,
     bounds,
-    referenceLabel: bounds ? formatBoundsLabel(bounds, unit) : "n/a",
+    referenceLabel: bounds
+      ? formatBoundsLabel(bounds, unit, scoringSemantic)
+      : "n/a",
   };
 }
 
 /** Flag ambient per reading against day or night bounds from timestamp. */
-function summariseAmbientTemp(dayReadings: SensorReading[]): MetricDaySummary {
+function summariseAmbientTemp(
+  dayReadings: SensorReading[],
+  cropType: string,
+  lifecycleStage: string,
+  scoringSemantic: ScoringSemantic,
+): MetricDaySummary {
   const samples = dayReadings
     .filter(
       (r): r is SensorReading & { ambient_temp_c: number } =>
         r.ambient_temp_c !== null && r.ambient_temp_c !== undefined,
     )
     .map((r) => ({ value: r.ambient_temp_c, at: r.recorded_at }));
+
+  const sampleBounds = samples.map((s) =>
+    getAmbientBoundsForProfile(s.at, cropType, lifecycleStage),
+  );
+  const flaggable = sampleBounds.some((b) => b !== null);
 
   if (samples.length === 0) {
     return {
@@ -134,10 +164,11 @@ function summariseAmbientTemp(dayReadings: SensorReading[]): MetricDaySummary {
       mean: null,
       min: null,
       max: null,
-      flaggable: true,
+      flaggable,
       outOfBounds: false,
+      elevated: false,
       bounds: null,
-      referenceLabel: AMBIENT_REFERENCE_LABEL,
+      referenceLabel: flaggable ? AMBIENT_REFERENCE_LABEL : "n/a (no band)",
     };
   }
 
@@ -145,9 +176,16 @@ function summariseAmbientTemp(dayReadings: SensorReading[]): MetricDaySummary {
   const min = Math.min(...values);
   const max = Math.max(...values);
   const mean = values.reduce((s, v) => s + v, 0) / values.length;
-  const outOfBounds = samples.some((s) =>
-    isOutOfBounds(s.value, ambientBoundsFor(s.at)),
-  );
+  const flagged =
+    flaggable &&
+    samples.some((s, i) => {
+      const bounds = sampleBounds[i];
+      return (
+        bounds !== null &&
+        isFlaggedAgainstBand(s.value, bounds, scoringSemantic)
+      );
+    });
+  const elevated = flagged && scoringSemantic === "restraint";
 
   return {
     key: "ambient_temp_c",
@@ -157,10 +195,11 @@ function summariseAmbientTemp(dayReadings: SensorReading[]): MetricDaySummary {
     mean,
     min,
     max,
-    flaggable: true,
-    outOfBounds,
+    flaggable,
+    outOfBounds: flagged && !elevated,
+    elevated,
     bounds: null,
-    referenceLabel: AMBIENT_REFERENCE_LABEL,
+    referenceLabel: flaggable ? AMBIENT_REFERENCE_LABEL : "n/a (no band)",
   };
 }
 
@@ -168,7 +207,7 @@ function summariseNpkEstimate(
   values: number[],
   key: string,
   label: string,
-  target: string,
+  referenceLabel: string,
 ): MetricDaySummary {
   if (values.length === 0) {
     return {
@@ -181,8 +220,9 @@ function summariseNpkEstimate(
       max: null,
       flaggable: false,
       outOfBounds: false,
+      elevated: false,
       bounds: null,
-      referenceLabel: `target ${target} (provisional)`,
+      referenceLabel,
     };
   }
   const min = Math.min(...values);
@@ -198,13 +238,29 @@ function summariseNpkEstimate(
     max,
     flaggable: false,
     outOfBounds: false,
+    elevated: false,
     bounds: null,
-    referenceLabel: `target ${target} (provisional)`,
+    referenceLabel,
   };
 }
 
+export interface BuildDailySummariesOptions {
+  cropType?: string | null;
+  lifecycleStage?: string | null;
+}
+
 /** Build per-calendar-day summaries, most recent day first. */
-export function buildDailySummaries(readings: SensorReading[]): DailySummary[] {
+export function buildDailySummaries(
+  readings: SensorReading[],
+  options: BuildDailySummariesOptions = {},
+): DailySummary[] {
+  const cropType = options.cropType ?? DEFAULT_CROP_TYPE;
+  const lifecycleStage = options.lifecycleStage ?? DEFAULT_LIFECYCLE_STAGE;
+  const scoringSemantic: ScoringSemantic = getScoringSemantic(
+    cropType,
+    lifecycleStage,
+  );
+
   const byDay = new Map<string, SensorReading[]>();
   for (const reading of readings) {
     const key = localDayKey(reading.recorded_at);
@@ -221,9 +277,21 @@ export function buildDailySummaries(readings: SensorReading[]): DailySummary[] {
 
     for (const metric of METRICS) {
       if (metric.key === "ambient_temp_c") {
-        metrics.push(summariseAmbientTemp(dayReadings));
+        metrics.push(
+          summariseAmbientTemp(
+            dayReadings,
+            cropType,
+            lifecycleStage,
+            scoringSemantic,
+          ),
+        );
         continue;
       }
+      const bounds = getMetricBoundsForProfile(
+        metric.key,
+        cropType,
+        lifecycleStage,
+      );
       const values = dayReadings
         .map((r) => r[metric.key])
         .filter((v): v is number => v !== null && v !== undefined);
@@ -233,7 +301,8 @@ export function buildDailySummaries(readings: SensorReading[]): DailySummary[] {
           metric.key,
           metric.label,
           metric.unit,
-          metric.bounds,
+          bounds,
+          scoringSemantic,
         ),
       );
     }
@@ -245,7 +314,7 @@ export function buildDailySummaries(readings: SensorReading[]): DailySummary[] {
           .filter((v): v is number => v !== null && v !== undefined),
         "npk_n_est",
         "N est.",
-        N_TARGET,
+        npkReferenceLabel("n", cropType, lifecycleStage),
       ),
       summariseNpkEstimate(
         dayReadings
@@ -253,7 +322,7 @@ export function buildDailySummaries(readings: SensorReading[]): DailySummary[] {
           .filter((v): v is number => v !== null && v !== undefined),
         "npk_p_est",
         "P est.",
-        P_TARGET,
+        npkReferenceLabel("p", cropType, lifecycleStage),
       ),
       summariseNpkEstimate(
         dayReadings
@@ -261,14 +330,16 @@ export function buildDailySummaries(readings: SensorReading[]): DailySummary[] {
           .filter((v): v is number => v !== null && v !== undefined),
         "npk_k_est",
         "K est.",
-        K_TARGET,
+        npkReferenceLabel("k", cropType, lifecycleStage),
       ),
     );
 
     return {
       day,
       metrics,
-      hasFlags: metrics.some((m) => m.flaggable && m.outOfBounds),
+      hasFlags: metrics.some(
+        (m) => m.flaggable && (m.outOfBounds || m.elevated),
+      ),
     };
   });
 }

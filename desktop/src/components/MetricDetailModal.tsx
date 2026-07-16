@@ -34,11 +34,15 @@ const TREND_SYMBOL: Record<TrendDirection, string> = {
 interface MetricDetailModalProps {
   metricKey: MetricKey;
   onClose: () => void;
+  deviceCropType?: string;
+  deviceLifecycleStage?: string;
 }
 
 export function MetricDetailModal({
   metricKey,
   onClose,
+  deviceCropType = "tomato",
+  deviceLifecycleStage = "mature",
 }: MetricDetailModalProps) {
   const metric = getMetric(metricKey);
   const [preset, setPreset] = useState<RangePreset>("6h");
@@ -142,6 +146,9 @@ export function MetricDetailModal({
               metricKey={metricKey}
               colour={metric.colour}
               height={320}
+              deviceCropType={deviceCropType}
+              deviceLifecycleStage={deviceLifecycleStage}
+              segmentByProfile
             />
 
             <section className="stats-grid">
@@ -168,7 +175,7 @@ export function MetricDetailModal({
                 >
                   {stats
                     ? `${TREND_SYMBOL[stats.trend]} ${TREND_LABEL[stats.trend]}`
-                    : "—"}
+                    : "n/a"}
                 </span>
                 <span className="stat-hint">
                   first half vs second half of range

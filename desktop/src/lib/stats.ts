@@ -53,3 +53,18 @@ export function isOutOfBounds(
 ): boolean {
   return value < bounds.min || value > bounds.max;
 }
+
+/**
+ * Flag a value against a band using scoring_semantic.
+ * restraint: only above max is a concern (excess vigour), not a deficiency.
+ */
+export function isFlaggedAgainstBand(
+  value: number,
+  bounds: { min: number; max: number },
+  scoringSemantic: "optimal_band" | "restraint",
+): boolean {
+  if (scoringSemantic === "restraint") {
+    return value > bounds.max;
+  }
+  return isOutOfBounds(value, bounds);
+}

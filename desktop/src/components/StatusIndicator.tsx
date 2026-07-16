@@ -1,12 +1,13 @@
 interface StatusIndicatorProps {
   label: string;
-  status: "ok" | "warn" | "error" | "unknown";
+  status: "ok" | "warn" | "elevated" | "error" | "unknown";
   detail?: string;
 }
 
 const STATUS_COLOURS: Record<StatusIndicatorProps["status"], string> = {
   ok: "#2DB500",
   warn: "#FF8A00",
+  elevated: "#FF8A00",
   error: "#ff4444",
   unknown: "#555555",
 };

@@ -14,11 +14,18 @@ export interface SensorReading {
   npk_n_est: number | null;
   npk_p_est: number | null;
   npk_k_est: number | null;
+  probe_depth_cm?: number | null;
+  /** Profile stamped at insert. Null on pre-provenance rows. */
+  crop_type_at_reading?: string | null;
+  lifecycle_stage_at_reading?: string | null;
 }
 
 export interface LatestReadingResponse {
   device_name: string;
   reading: SensorReading | null;
+  crop_type?: string;
+  lifecycle_stage?: string;
+  device_id?: string | null;
 }
 
 export interface ReadingsRangeResponse {
@@ -27,10 +34,38 @@ export interface ReadingsRangeResponse {
   to_at: string;
   readings: SensorReading[];
   count: number;
+  crop_type?: string;
+  lifecycle_stage?: string;
+  device_id?: string | null;
 }
 
-async function apiFetch<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`);
+export interface DeviceResponse {
+  id: string;
+  name: string;
+  crop_type: string;
+  lifecycle_stage: string;
+}
+
+export interface ProfileStageOption {
+  lifecycle_stage: string;
+  display_name: string;
+}
+
+export interface ProfileCropOption {
+  crop_type: string;
+  display_name: string;
+  lifecycle_stages: ProfileStageOption[];
+}
+
+export interface DeviceProfileOptionsResponse {
+  crops: ProfileCropOption[];
+}
+
+async function apiFetch<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, init);
   if (!response.ok) {
     const detail = await response.text();
     throw new Error(`API ${response.status}: ${detail}`);
@@ -67,4 +102,30 @@ export const HISTORY_FETCH_LIMIT = 5000;
 
 export async function fetchHealth(): Promise<{ status: string }> {
   return apiFetch<{ status: string }>("/health");
+}
+
+export async function fetchProfileOptions(
+  deviceId: string,
+): Promise<DeviceProfileOptionsResponse> {
+  return apiFetch<DeviceProfileOptionsResponse>(
+    `/devices/${encodeURIComponent(deviceId)}/profile-options`,
+  );
+}
+
+export async function patchDeviceProfile(
+  deviceId: string,
+  cropType: string,
+  lifecycleStage: string,
+): Promise<DeviceResponse> {
+  return apiFetch<DeviceResponse>(
+    `/devices/${encodeURIComponent(deviceId)}/profile`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        crop_type: cropType,
+        lifecycle_stage: lifecycleStage,
+      }),
+    },
+  );
 }

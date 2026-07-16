@@ -5,16 +5,28 @@ import {
   fetchReadingsRange,
   type SensorReading,
 } from "../lib/api";
+import { PlantProfileSection } from "../components/PlantProfileSection";
 import { MetricDetailModal } from "../components/MetricDetailModal";
 import { Sparkline } from "../components/Sparkline";
 import { StatusIndicator } from "../components/StatusIndicator";
-import type { MetricKey } from "../lib/metrics";
+import {
+  DEFAULT_CROP_TYPE,
+  DEFAULT_LIFECYCLE_STAGE,
+  getScoringSemantic,
+} from "../lib/growingConstants";
+import {
+  getAmbientBoundsForProfile,
+  getMetricBoundsForProfile,
+  scoreMetricValue,
+  type MetricKey,
+  type MetricStatus,
+} from "../lib/metrics";
 
 const DEVICE_NAME = "pi-garden-01";
 const POLL_MS = 30_000;
 
 function formatValue(value: number | null | undefined, suffix = ""): string {
-  if (value === null || value === undefined) return "—";
+  if (value === null || value === undefined) return "n/a";
   return `${value}${suffix}`;
 }
 
@@ -27,23 +39,32 @@ function formatTimestamp(iso: string): string {
   });
 }
 
-function moistureStatus(pct: number | null | undefined): "ok" | "warn" | "error" | "unknown" {
-  if (pct === null || pct === undefined) return "unknown";
-  if (pct < 20) return "warn";
-  if (pct > 80) return "warn";
-  return "ok";
-}
-
-function phStatus(ph: number | null | undefined): "ok" | "warn" | "error" | "unknown" {
-  if (ph === null || ph === undefined) return "unknown";
-  if (ph < 5.5 || ph > 8.0) return "warn";
-  return "ok";
+function statusForMetric(
+  key: MetricKey,
+  value: number | null | undefined,
+  cropType: string,
+  lifecycleStage: string,
+  recordedAt?: string | null,
+): MetricStatus {
+  if (value === null || value === undefined) return "unknown";
+  if (key === "moisture_raw") {
+    return "ok";
+  }
+  if (key === "ambient_temp_c") {
+    const at = recordedAt ?? new Date().toISOString();
+    const bounds = getAmbientBoundsForProfile(at, cropType, lifecycleStage);
+    const semantic = getScoringSemantic(cropType, lifecycleStage);
+    return scoreMetricValue(value, bounds, semantic);
+  }
+  const bounds = getMetricBoundsForProfile(key, cropType, lifecycleStage);
+  const semantic = getScoringSemantic(cropType, lifecycleStage);
+  return scoreMetricValue(value, bounds, semantic);
 }
 
 interface MetricCardProps {
   label: string;
   value: string;
-  status: "ok" | "warn" | "error" | "unknown";
+  status: MetricStatus;
   sparkValues: number[];
   sparkColour?: string;
   onOpen: () => void;
@@ -69,9 +90,19 @@ function MetricCard({
   );
 }
 
-export function Dashboard() {
+interface DashboardProps {
+  profileEpoch: number;
+  onProfileChanged: () => void;
+}
+
+export function Dashboard({ profileEpoch, onProfileChanged }: DashboardProps) {
   const [reading, setReading] = useState<SensorReading | null>(null);
   const [history, setHistory] = useState<SensorReading[]>([]);
+  const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [cropType, setCropType] = useState<string>(DEFAULT_CROP_TYPE);
+  const [lifecycleStage, setLifecycleStage] = useState<string>(
+    DEFAULT_LIFECYCLE_STAGE,
+  );
   const [sidecarOk, setSidecarOk] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
@@ -91,6 +122,9 @@ export function Dashboard() {
       setSidecarOk(health.status === "ok");
       setReading(latest.reading);
       setHistory(range.readings);
+      setDeviceId(latest.device_id ?? latest.reading?.device_id ?? null);
+      setCropType(latest.crop_type ?? DEFAULT_CROP_TYPE);
+      setLifecycleStage(latest.lifecycle_stage ?? DEFAULT_LIFECYCLE_STAGE);
       setError(null);
       setLastRefresh(new Date());
     } catch (err) {
@@ -103,7 +137,7 @@ export function Dashboard() {
     void refresh();
     const timer = setInterval(() => void refresh(), POLL_MS);
     return () => clearInterval(timer);
-  }, [refresh]);
+  }, [refresh, profileEpoch]);
 
   const moistureHistory = history
     .map((r) => r.moisture_pct)
@@ -124,6 +158,7 @@ export function Dashboard() {
           <p className="subtitle">
             {DEVICE_NAME}
             {reading && ` · last reading ${formatTimestamp(reading.recorded_at)}`}
+            {` · ${cropType}/${lifecycleStage}`}
           </p>
         </div>
         <div className="status-row">
@@ -151,14 +186,19 @@ export function Dashboard() {
         <MetricCard
           label="Moisture"
           value={formatValue(reading?.moisture_pct, "%")}
-          status={moistureStatus(reading?.moisture_pct)}
+          status={statusForMetric(
+            "moisture_pct",
+            reading?.moisture_pct,
+            cropType,
+            lifecycleStage,
+          )}
           sparkValues={moistureHistory}
           onOpen={() => setDetailMetric("moisture_pct")}
         />
         <MetricCard
           label="pH"
           value={formatValue(reading?.ph)}
-          status={phStatus(reading?.ph)}
+          status={statusForMetric("ph", reading?.ph, cropType, lifecycleStage)}
           sparkValues={phHistory}
           sparkColour="#107EEC"
           onOpen={() => setDetailMetric("ph")}
@@ -166,7 +206,12 @@ export function Dashboard() {
         <MetricCard
           label="Soil temp"
           value={formatValue(reading?.soil_temp_c, " °C")}
-          status={reading?.soil_temp_c != null ? "ok" : "unknown"}
+          status={statusForMetric(
+            "soil_temp_c",
+            reading?.soil_temp_c,
+            cropType,
+            lifecycleStage,
+          )}
           sparkValues={soilTempHistory}
           sparkColour="#FF8A00"
           onOpen={() => setDetailMetric("soil_temp_c")}
@@ -174,7 +219,13 @@ export function Dashboard() {
         <MetricCard
           label="Ambient temp"
           value={formatValue(reading?.ambient_temp_c, " °C")}
-          status={reading?.ambient_temp_c != null ? "ok" : "unknown"}
+          status={statusForMetric(
+            "ambient_temp_c",
+            reading?.ambient_temp_c,
+            cropType,
+            lifecycleStage,
+            reading?.recorded_at,
+          )}
           sparkValues={ambientTempHistory}
           sparkColour="#107EEC"
           onOpen={() => setDetailMetric("ambient_temp_c")}
@@ -182,7 +233,12 @@ export function Dashboard() {
         <MetricCard
           label="Humidity"
           value={formatValue(reading?.ambient_humidity_pct, "%")}
-          status={reading?.ambient_humidity_pct != null ? "ok" : "unknown"}
+          status={statusForMetric(
+            "ambient_humidity_pct",
+            reading?.ambient_humidity_pct,
+            cropType,
+            lifecycleStage,
+          )}
           sparkValues={history
             .map((r) => r.ambient_humidity_pct)
             .filter((v): v is number => v !== null)}
@@ -191,13 +247,30 @@ export function Dashboard() {
         <MetricCard
           label="Raw ADC"
           value={formatValue(reading?.moisture_raw)}
-          status={reading?.moisture_raw != null ? "ok" : "unknown"}
+          status={statusForMetric(
+            "moisture_raw",
+            reading?.moisture_raw,
+            cropType,
+            lifecycleStage,
+          )}
           sparkValues={history
             .map((r) => r.moisture_raw)
             .filter((v): v is number => v !== null)}
           onOpen={() => setDetailMetric("moisture_raw")}
         />
       </section>
+
+      <PlantProfileSection
+        deviceId={deviceId}
+        cropType={cropType}
+        lifecycleStage={lifecycleStage}
+        onProfileSaved={(nextCrop, nextStage) => {
+          setCropType(nextCrop);
+          setLifecycleStage(nextStage);
+          onProfileChanged();
+          void refresh();
+        }}
+      />
 
       <footer className="dashboard-footer">
         <span>6h sparklines · polls every 30s · click a card for detail</span>
@@ -209,6 +282,8 @@ export function Dashboard() {
       {detailMetric && (
         <MetricDetailModal
           metricKey={detailMetric}
+          deviceCropType={cropType}
+          deviceLifecycleStage={lifecycleStage}
           onClose={() => setDetailMetric(null)}
         />
       )}

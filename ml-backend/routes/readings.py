@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 
-from db import get_supabase, resolve_device_id
+from db import get_supabase, resolve_device
 from models import LatestReadingResponse, ReadingsRangeResponse, SensorReading
 
 router = APIRouter(prefix="/readings", tags=["readings"])
@@ -24,7 +24,7 @@ def get_latest_reading(
     device_name: str = Query(default=DEFAULT_DEVICE),
 ) -> LatestReadingResponse:
     try:
-        device_id = resolve_device_id(device_name)
+        device = resolve_device(device_name)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -32,14 +32,20 @@ def get_latest_reading(
     response = (
         client.table("sensor_readings")
         .select("*")
-        .eq("device_id", device_id)
+        .eq("device_id", device["id"])
         .order("recorded_at", desc=True)
         .limit(1)
         .execute()
     )
     rows = response.data or []
     reading = _parse_reading(rows[0]) if rows else None
-    return LatestReadingResponse(device_name=device_name, reading=reading)
+    return LatestReadingResponse(
+        device_name=device_name,
+        reading=reading,
+        crop_type=device["crop_type"],
+        lifecycle_stage=device["lifecycle_stage"],
+        device_id=device["id"],
+    )
 
 
 @router.get("/range", response_model=ReadingsRangeResponse)
@@ -58,7 +64,7 @@ def get_readings_range(
         raise HTTPException(status_code=400, detail="from_at must be before to_at")
 
     try:
-        device_id = resolve_device_id(device_name)
+        device = resolve_device(device_name)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -66,7 +72,7 @@ def get_readings_range(
     response = (
         client.table("sensor_readings")
         .select("*")
-        .eq("device_id", device_id)
+        .eq("device_id", device["id"])
         .gte("recorded_at", from_at.isoformat())
         .lte("recorded_at", to_at.isoformat())
         .order("recorded_at", desc=False)
@@ -81,4 +87,7 @@ def get_readings_range(
         to_at=to_at,
         readings=readings,
         count=len(readings),
+        crop_type=device["crop_type"],
+        lifecycle_stage=device["lifecycle_stage"],
+        device_id=device["id"],
     )

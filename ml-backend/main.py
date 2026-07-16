@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from routes.devices import router as devices_router
 from routes.readings import router as readings_router
 from routes.soil_tests import router as soil_tests_router
 
@@ -27,6 +28,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(devices_router)
 app.include_router(readings_router)
 app.include_router(soil_tests_router)
 

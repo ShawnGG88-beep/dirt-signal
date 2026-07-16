@@ -14,6 +14,7 @@ const NAV: { id: AppView; label: string }[] = [
 
 function App() {
   const [view, setView] = useState<AppView>("dashboard");
+  const [profileEpoch, setProfileEpoch] = useState(0);
 
   return (
     <main className="app">
@@ -32,9 +33,14 @@ function App() {
         ))}
       </nav>
 
-      {view === "dashboard" && <Dashboard />}
-      {view === "history" && <History />}
-      {view === "reports" && <Reports />}
+      {view === "dashboard" && (
+        <Dashboard
+          profileEpoch={profileEpoch}
+          onProfileChanged={() => setProfileEpoch((n) => n + 1)}
+        />
+      )}
+      {view === "history" && <History profileEpoch={profileEpoch} />}
+      {view === "reports" && <Reports profileEpoch={profileEpoch} />}
     </main>
   );
 }

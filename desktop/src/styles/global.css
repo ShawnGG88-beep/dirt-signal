@@ -532,3 +532,149 @@ body {
   color: var(--accent-blue);
   font-family: inherit;
 }
+
+.reports-limitations {
+  margin-top: 1.5rem;
+  padding: 1rem 0;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.reports-limitations h2 {
+  color: var(--fg);
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 0.75rem;
+}
+
+.reports-limitations ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.reports-limitation-extra {
+  margin-top: 0.75rem;
+  color: var(--muted);
+}
+
+.elevated-badge {
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-orange);
+  border: 1px solid var(--accent-orange);
+  padding: 0.15rem 0.45rem;
+}
+
+.row-elevated td {
+  color: var(--accent-orange);
+}
+
+.elevated-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border: 1px solid var(--accent-orange);
+  color: var(--accent-orange);
+  font-weight: 700;
+  font-size: 0.75rem;
+}
+
+.plant-profile {
+  margin-top: 1.5rem;
+  padding: 1rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.plant-profile-header h2 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+
+.plant-profile-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.plant-profile-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 10rem;
+}
+
+.plant-profile-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.plant-profile-select {
+  background: var(--card-bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  font-family: inherit;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.55rem;
+}
+
+.plant-profile-select:focus {
+  outline: 1px solid var(--primary);
+  border-color: var(--primary);
+}
+
+.plant-profile-confirm {
+  margin-top: 0.85rem;
+  padding: 0.75rem;
+  border: 1px solid var(--accent-orange);
+  background: var(--card-bg);
+  color: var(--fg);
+  font-size: 0.85rem;
+}
+
+.plant-profile-confirm-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+}
+
+.plant-profile-confirm-go {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.chart-segment-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-bottom: 0.35rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.chart-segment-label {
+  opacity: 0.9;
+}
+
+.chart-provenance-note,
+.provenance-note {
+  color: var(--accent-orange);
+  font-size: 0.8rem;
+  margin-bottom: 0.5rem;
+}

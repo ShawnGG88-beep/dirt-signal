@@ -5,6 +5,10 @@ import {
   type SensorReading,
 } from "../lib/api";
 import {
+  DEFAULT_CROP_TYPE,
+  DEFAULT_LIFECYCLE_STAGE,
+} from "../lib/growingConstants";
+import {
   METRICS,
   rangeFromPreset,
   type RangePreset,
@@ -15,9 +19,17 @@ import { TimeSeriesChart } from "../components/TimeSeriesChart";
 
 const DEVICE_NAME = "pi-garden-01";
 
-export function History() {
+interface HistoryProps {
+  profileEpoch: number;
+}
+
+export function History({ profileEpoch }: HistoryProps) {
   const [preset, setPreset] = useState<RangePreset>("24h");
   const [readings, setReadings] = useState<SensorReading[]>([]);
+  const [cropType, setCropType] = useState<string>(DEFAULT_CROP_TYPE);
+  const [lifecycleStage, setLifecycleStage] = useState<string>(
+    DEFAULT_LIFECYCLE_STAGE,
+  );
   const [from, setFrom] = useState(() => rangeFromPreset("24h").from);
   const [to, setTo] = useState(() => rangeFromPreset("24h").to);
   const [loading, setLoading] = useState(true);
@@ -40,6 +52,10 @@ export function History() {
         );
         if (!cancelled) {
           setReadings(range.readings);
+          setCropType(range.crop_type ?? DEFAULT_CROP_TYPE);
+          setLifecycleStage(
+            range.lifecycle_stage ?? DEFAULT_LIFECYCLE_STAGE,
+          );
           setError(null);
         }
       } catch (err) {
@@ -56,7 +72,11 @@ export function History() {
     return () => {
       cancelled = true;
     };
-  }, [preset]);
+  }, [preset, profileEpoch]);
+
+  const hasUnknownProvenance = readings.some(
+    (r) => !r.crop_type_at_reading || !r.lifecycle_stage_at_reading,
+  );
 
   return (
     <div className="view-page">
@@ -64,7 +84,8 @@ export function History() {
         <div>
           <h1>History</h1>
           <p className="subtitle">
-            Small multiples · shared window · {readings.length} readings
+            Small multiples · shared window · {readings.length} readings ·{" "}
+            {cropType}/{lifecycleStage}
           </p>
         </div>
         <div className="view-toolbar">
@@ -75,6 +96,12 @@ export function History() {
 
       {error && <div className="error-banner">{error}</div>}
       {loading && <p className="view-status">Loading…</p>}
+      {!loading && hasUnknownProvenance && (
+        <p className="view-status provenance-note">
+          Profile unknown for this period: some readings predate provenance
+          stamping and are scored with the device&apos;s current profile.
+        </p>
+      )}
 
       {!loading && (
         <section className="history-grid">
@@ -92,6 +119,9 @@ export function History() {
                 colour={metric.colour}
                 height={160}
                 compact
+                deviceCropType={cropType}
+                deviceLifecycleStage={lifecycleStage}
+                segmentByProfile
               />
             </article>
           ))}

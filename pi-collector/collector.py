@@ -56,10 +56,11 @@ def get_supabase() -> Client:
     return create_client(url, key)
 
 
-def resolve_device_id(client: Client, device_name: str) -> str:
+def resolve_device(client: Client, device_name: str) -> dict[str, str]:
+    """Return id plus current crop_type / lifecycle_stage for provenance stamps."""
     response = (
         client.table("devices")
-        .select("id")
+        .select("id, crop_type, lifecycle_stage")
         .eq("name", device_name)
         .limit(1)
         .execute()
@@ -70,7 +71,16 @@ def resolve_device_id(client: Client, device_name: str) -> str:
             f"No device named '{device_name}' in Supabase. "
             "Run supabase/migrations/001_dirt_signal_schema.sql first."
         )
-    return str(rows[0]["id"])
+    row = rows[0]
+    return {
+        "id": str(row["id"]),
+        "crop_type": str(row.get("crop_type") or "tomato"),
+        "lifecycle_stage": str(row.get("lifecycle_stage") or "mature"),
+    }
+
+
+def resolve_device_id(client: Client, device_name: str) -> str:
+    return resolve_device(client, device_name)["id"]
 
 
 def collect_reading(
@@ -99,20 +109,27 @@ def collect_reading(
 
 def write_reading(
     client: Client,
-    device_id: str,
+    device: dict[str, str],
     payload: dict[str, Any],
 ) -> None:
+    # Stamp the profile in effect now so History never re-scores old
+    # readings against a later crop assignment (Case A replant).
     row = {
-        "device_id": device_id,
+        "device_id": device["id"],
         "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "crop_type_at_reading": device["crop_type"],
+        "lifecycle_stage_at_reading": device["lifecycle_stage"],
         **payload,
     }
     client.table("sensor_readings").insert(row).execute()
     logger.info(
-        "Inserted reading: moisture=%.1f%% pH=%.2f soil=%.1f°C",
+        "Inserted reading: moisture=%.1f%% pH=%.2f soil=%.1f°C "
+        "profile=%s/%s",
         payload["moisture_pct"],
         payload["ph"],
         payload["soil_temp_c"],
+        device["crop_type"],
+        device["lifecycle_stage"],
     )
 
 
@@ -125,7 +142,7 @@ def _interval_sleep(interval: int) -> None:
 
 def run_sensor_loop(
     client: Client,
-    device_id: str,
+    device_name: str,
     moisture: Any,
     ph: Any,
     ambient: Any,
@@ -134,8 +151,11 @@ def run_sensor_loop(
 ) -> None:
     while not _shutdown:
         try:
+            # Re-resolve each cycle so a mid-run profile switch is stamped
+            # on subsequent inserts without restarting the collector.
+            device = resolve_device(client, device_name)
             payload = collect_reading(moisture, ph, ambient, soil_temp)
-            write_reading(client, device_id, payload)
+            write_reading(client, device, payload)
         except Exception:
             logger.exception("Failed to collect or write reading")
         _interval_sleep(interval)
@@ -198,15 +218,18 @@ def run() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
 
     client = get_supabase()
-    device_id = resolve_device_id(client, device_name)
+    device = resolve_device(client, device_name)
+    device_id = device["id"]
     moisture, ph, ambient, soil_temp = build_sensors(sensor_mode)
     camera = build_camera(camera_mode)
 
     logger.info(
-        "Collector started for device '%s' (%s), "
+        "Collector started for device '%s' (%s) profile=%s/%s, "
         "sensor interval %ds mode=%s, capture interval %ds mode=%s",
         device_name,
         device_id,
+        device["crop_type"],
+        device["lifecycle_stage"],
         interval,
         sensor_mode,
         capture_interval,
@@ -221,7 +244,9 @@ def run() -> None:
     )
     camera_thread.start()
 
-    run_sensor_loop(client, device_id, moisture, ph, ambient, soil_temp, interval)
+    run_sensor_loop(
+        client, device_name, moisture, ph, ambient, soil_temp, interval
+    )
 
     camera_thread.join(timeout=capture_interval + 5)
     logger.info("Collector stopped.")

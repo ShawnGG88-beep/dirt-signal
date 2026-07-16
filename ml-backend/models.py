@@ -24,11 +24,18 @@ class SensorReading(BaseModel):
     npk_n_est: int | None = None
     npk_p_est: int | None = None
     npk_k_est: int | None = None
+    probe_depth_cm: float | None = None
+    # Provenance: profile in effect at insert. NULL on pre-migration rows.
+    crop_type_at_reading: str | None = None
+    lifecycle_stage_at_reading: str | None = None
 
 
 class LatestReadingResponse(BaseModel):
     device_name: str
     reading: SensorReading | None = None
+    crop_type: str = "tomato"
+    lifecycle_stage: str = "mature"
+    device_id: str | None = None
 
 
 class ReadingsRangeResponse(BaseModel):
@@ -37,6 +44,36 @@ class ReadingsRangeResponse(BaseModel):
     to_at: datetime
     readings: list[SensorReading] = Field(default_factory=list)
     count: int = 0
+    crop_type: str = "tomato"
+    lifecycle_stage: str = "mature"
+    device_id: str | None = None
+
+
+class DeviceProfileUpdate(BaseModel):
+    crop_type: str
+    lifecycle_stage: str
+
+
+class DeviceResponse(BaseModel):
+    id: str
+    name: str
+    crop_type: str
+    lifecycle_stage: str
+
+
+class ProfileStageOption(BaseModel):
+    lifecycle_stage: str
+    display_name: str
+
+
+class ProfileCropOption(BaseModel):
+    crop_type: str
+    display_name: str
+    lifecycle_stages: list[ProfileStageOption] = Field(default_factory=list)
+
+
+class DeviceProfileOptionsResponse(BaseModel):
+    crops: list[ProfileCropOption] = Field(default_factory=list)
 
 
 class SoilTestCreate(BaseModel):
