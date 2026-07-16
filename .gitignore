@@ -17,6 +17,9 @@ desktop/src-tauri/target/
 ml-backend/model/registry/*.pkl
 ml-backend/model/registry/*.joblib
 
+# Pi collector local camera captures (never commit images)
+pi-collector/captures/
+
 # IDE
 .idea/
 .vscode/

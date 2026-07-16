@@ -6,3 +6,9 @@ sensor_mode: mock
 
 # Production: 900 (15 minutes). Shorter interval for local development / smoke tests.
 read_interval_seconds: 30
+
+# mock | real (real raises NotImplementedError until the camera is wired)
+camera_mode: mock
+
+# Production: 900 (15 minutes). Independent of sensor read interval.
+capture_interval_seconds: 30
