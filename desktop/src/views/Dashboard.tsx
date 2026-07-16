@@ -5,8 +5,10 @@ import {
   fetchReadingsRange,
   type SensorReading,
 } from "../lib/api";
+import { MetricDetailModal } from "../components/MetricDetailModal";
 import { Sparkline } from "../components/Sparkline";
 import { StatusIndicator } from "../components/StatusIndicator";
+import type { MetricKey } from "../lib/metrics";
 
 const DEVICE_NAME = "pi-garden-01";
 const POLL_MS = 30_000;
@@ -44,18 +46,26 @@ interface MetricCardProps {
   status: "ok" | "warn" | "error" | "unknown";
   sparkValues: number[];
   sparkColour?: string;
+  onOpen: () => void;
 }
 
-function MetricCard({ label, value, status, sparkValues, sparkColour }: MetricCardProps) {
+function MetricCard({
+  label,
+  value,
+  status,
+  sparkValues,
+  sparkColour,
+  onOpen,
+}: MetricCardProps) {
   return (
-    <div className="metric-card">
+    <button type="button" className="metric-card" onClick={onOpen}>
       <div className="metric-header">
         <span className="metric-label">{label}</span>
         <StatusIndicator label="" status={status} />
       </div>
       <div className="metric-value">{value}</div>
       <Sparkline values={sparkValues} colour={sparkColour} />
-    </div>
+    </button>
   );
 }
 
@@ -65,6 +75,7 @@ export function Dashboard() {
   const [sidecarOk, setSidecarOk] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [detailMetric, setDetailMetric] = useState<MetricKey | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -142,6 +153,7 @@ export function Dashboard() {
           value={formatValue(reading?.moisture_pct, "%")}
           status={moistureStatus(reading?.moisture_pct)}
           sparkValues={moistureHistory}
+          onOpen={() => setDetailMetric("moisture_pct")}
         />
         <MetricCard
           label="pH"
@@ -149,6 +161,7 @@ export function Dashboard() {
           status={phStatus(reading?.ph)}
           sparkValues={phHistory}
           sparkColour="#107EEC"
+          onOpen={() => setDetailMetric("ph")}
         />
         <MetricCard
           label="Soil temp"
@@ -156,6 +169,7 @@ export function Dashboard() {
           status={reading?.soil_temp_c != null ? "ok" : "unknown"}
           sparkValues={soilTempHistory}
           sparkColour="#FF8A00"
+          onOpen={() => setDetailMetric("soil_temp_c")}
         />
         <MetricCard
           label="Ambient temp"
@@ -163,6 +177,7 @@ export function Dashboard() {
           status={reading?.ambient_temp_c != null ? "ok" : "unknown"}
           sparkValues={ambientTempHistory}
           sparkColour="#107EEC"
+          onOpen={() => setDetailMetric("ambient_temp_c")}
         />
         <MetricCard
           label="Humidity"
@@ -171,6 +186,7 @@ export function Dashboard() {
           sparkValues={history
             .map((r) => r.ambient_humidity_pct)
             .filter((v): v is number => v !== null)}
+          onOpen={() => setDetailMetric("ambient_humidity_pct")}
         />
         <MetricCard
           label="Raw ADC"
@@ -179,15 +195,23 @@ export function Dashboard() {
           sparkValues={history
             .map((r) => r.moisture_raw)
             .filter((v): v is number => v !== null)}
+          onOpen={() => setDetailMetric("moisture_raw")}
         />
       </section>
 
       <footer className="dashboard-footer">
-        <span>6h sparklines · polls every 30s</span>
+        <span>6h sparklines · polls every 30s · click a card for detail</span>
         <button type="button" className="refresh-btn" onClick={() => void refresh()}>
           Refresh now
         </button>
       </footer>
+
+      {detailMetric && (
+        <MetricDetailModal
+          metricKey={detailMetric}
+          onClose={() => setDetailMetric(null)}
+        />
+      )}
     </div>
   );
 }

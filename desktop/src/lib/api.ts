@@ -50,15 +50,20 @@ export async function fetchReadingsRange(
   fromAt: Date,
   toAt: Date,
   deviceName = "pi-garden-01",
+  /** Dashboard keeps the original 120; history/reports may request more. */
+  limit = 120,
 ): Promise<ReadingsRangeResponse> {
   const params = new URLSearchParams({
     device_name: deviceName,
     from_at: fromAt.toISOString(),
     to_at: toAt.toISOString(),
-    limit: "120",
+    limit: String(Math.min(Math.max(limit, 1), 5000)),
   });
   return apiFetch<ReadingsRangeResponse>(`/readings/range?${params}`);
 }
+
+/** Higher limit for charts and reports (backend max is 5000). */
+export const HISTORY_FETCH_LIMIT = 5000;
 
 export async function fetchHealth(): Promise<{ status: string }> {
   return apiFetch<{ status: string }>("/health");
