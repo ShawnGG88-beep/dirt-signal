@@ -6,9 +6,12 @@ Edge AI soil monitoring system. A Raspberry Pi collects sensor readings into Sup
 
 | Package | Role |
 |---------|------|
-| `pi-collector/` | Python service on the Pi. Reads sensors, writes to Supabase. |
+| `pi-collector/` | Python service on the Pi. Reads sensors, captures plant images, writes to Supabase. |
 | `ml-backend/` | FastAPI sidecar on port 8731. Queries Supabase, serves the desktop app. |
 | `desktop/` | Tauri 2 + React app. Dashboard, history, soil tests, model views. |
+
+Pi camera setup (apt `python3-picamera2`, systemd, manual verification) lives in
+[`pi-collector/README.md`](pi-collector/README.md).
 
 ## Prerequisites
 

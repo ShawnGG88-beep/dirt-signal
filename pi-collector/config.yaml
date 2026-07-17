@@ -7,8 +7,25 @@ sensor_mode: mock
 # Production: 900 (15 minutes). Shorter interval for local development / smoke tests.
 read_interval_seconds: 30
 
-# mock | real (real raises NotImplementedError until the camera is wired)
-camera_mode: mock
+# mock | real (real needs python3-picamera2 from apt on the Pi)
+camera_mode: real
 
 # Production: 900 (15 minutes). Independent of sensor read interval.
 capture_interval_seconds: 30
+
+# Still capture resolution. Default is Camera Module 3 2304x1296 mode
+# (the sensor's reported ~56 fps mode), not full 4608x2592.
+capture_width: 2304
+capture_height: 1296
+
+# Lighting context at capture time. One of: natural | grow_light | mixed | unknown
+#
+# Why this matters: the project's grow light emits narrowband red/blue LEDs
+# with negligible near-infrared output, so images captured under it will have
+# a near-empty NIR channel, meaningfully different from images captured under
+# natural daylight. Any future NDVI-style proxy must either restrict itself to
+# same-light-condition comparisons or exclude grow-light images entirely.
+# Untagged historical images cannot be corrected after the fact, so tagging
+# must start now, not retrofitted later. Auto-detection from the image is
+# future work; set this manually for the current lighting setup.
+light_condition: unknown

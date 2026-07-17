@@ -22,6 +22,10 @@ from supabase import Client, create_client
 
 from camera.base import Camera
 from camera.factory import CameraMode, build_camera
+from camera.picamera_capture import (
+    DEFAULT_CAPTURE_HEIGHT,
+    DEFAULT_CAPTURE_WIDTH,
+)
 from sensors.factory import SensorMode, build_sensors
 
 logging.basicConfig(
@@ -32,6 +36,9 @@ logger = logging.getLogger("dirt-signal.collector")
 
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
 CAPTURES_DIR = Path(__file__).parent / "captures"
+_VALID_LIGHT_CONDITIONS = frozenset(
+    {"natural", "grow_light", "mixed", "unknown"}
+)
 _shutdown = False
 
 
@@ -54,6 +61,33 @@ def get_supabase() -> Client:
             "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in .env"
         )
     return create_client(url, key)
+
+
+def resolve_light_condition(config: dict[str, Any]) -> str:
+    """Return the manual light_condition tag from env or config.
+
+    light_condition is not auto-detected from the image. The grow light emits
+    narrowband red/blue LEDs with negligible near-infrared output, so images
+    captured under it will have a near-empty NIR channel, meaningfully
+    different from images captured under natural daylight. Any future
+    NDVI-style proxy must either restrict itself to same-light-condition
+    comparisons or exclude grow-light images entirely. Untagged historical
+    images cannot be corrected after the fact, so tagging must start now,
+    not retrofitted later.
+    """
+    raw = os.environ.get("LIGHT_CONDITION") or config.get(
+        "light_condition", "unknown"
+    )
+    value = str(raw).strip().lower()
+    if value not in _VALID_LIGHT_CONDITIONS:
+        logger.warning(
+            "Invalid light_condition %r; falling back to 'unknown'. "
+            "Expected one of: %s",
+            raw,
+            ", ".join(sorted(_VALID_LIGHT_CONDITIONS)),
+        )
+        return "unknown"
+    return value
 
 
 def resolve_device(client: Client, device_name: str) -> dict[str, str]:
@@ -165,28 +199,48 @@ def capture_and_record(
     client: Client,
     device_id: str,
     camera: Camera,
+    light_condition: str,
 ) -> None:
-    """Save a JPEG under captures/ and insert a plant_observations row (no upload)."""
-    result = camera.capture()
+    """Save a JPEG under captures/ and insert a plant_observations row (no upload).
+
+    On capture failure the observation row is skipped entirely so we never
+    insert a row with a missing or broken image_path. Images stay on the Pi.
+    """
+    try:
+        result = camera.capture()
+    except Exception as exc:
+        logger.error(
+            "Camera capture failed; skipping plant_observations insert. "
+            "device_id=%s timestamp=%s error=%s",
+            device_id,
+            datetime.now(timezone.utc).isoformat(),
+            exc,
+        )
+        return
+
     captured_at = datetime.now(timezone.utc)
-    filename = captured_at.strftime("%Y%m%d_%H%M%S.jpg")
+    stamp = captured_at.strftime("%Y%m%d_%H%M%S")
+    filename = f"plant_obs_{device_id}_{stamp}.jpg"
     CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
     local_path = CAPTURES_DIR / filename
     local_path.write_bytes(result.image_jpeg)
 
     # Store path relative to pi-collector so it is portable across machines.
+    # Images are never uploaded to Supabase; only this local path is stored.
     image_path = f"captures/{filename}"
     row = {
         "device_id": device_id,
         "captured_at": captured_at.isoformat(),
         "image_path": image_path,
         "ndvi_estimate": result.ndvi_estimate,
+        "light_condition": light_condition,
     }
     client.table("plant_observations").insert(row).execute()
     logger.info(
-        "Inserted plant observation: path=%s ndvi=%.3f",
+        "Inserted plant observation: path=%s ndvi=%s light_condition=%s",
         image_path,
         result.ndvi_estimate,
+        light_condition,
     )
 
 
@@ -195,12 +249,23 @@ def run_camera_loop(
     device_id: str,
     camera: Camera,
     interval: int,
+    light_condition: str,
 ) -> None:
     while not _shutdown:
+        if not getattr(camera, "available", True):
+            logger.warning(
+                "Degraded mode: skipping camera capture "
+                "(camera unavailable; sensor loop unaffected)"
+            )
+            _interval_sleep(interval)
+            continue
         try:
-            capture_and_record(client, device_id, camera)
+            capture_and_record(client, device_id, camera, light_condition)
         except Exception:
-            logger.exception("Failed to capture or write plant observation")
+            logger.exception(
+                "Failed to write plant observation "
+                "(sensor loop unaffected)"
+            )
         _interval_sleep(interval)
 
 
@@ -213,6 +278,13 @@ def run() -> None:
     interval: int = int(config.get("read_interval_seconds", 900))
     camera_mode: CameraMode = config.get("camera_mode", "mock")
     capture_interval: int = int(config.get("capture_interval_seconds", 900))
+    capture_width: int = int(
+        config.get("capture_width", DEFAULT_CAPTURE_WIDTH)
+    )
+    capture_height: int = int(
+        config.get("capture_height", DEFAULT_CAPTURE_HEIGHT)
+    )
+    light_condition = resolve_light_condition(config)
 
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
@@ -221,11 +293,25 @@ def run() -> None:
     device = resolve_device(client, device_name)
     device_id = device["id"]
     moisture, ph, ambient, soil_temp = build_sensors(sensor_mode)
-    camera = build_camera(camera_mode)
+    camera = build_camera(
+        camera_mode,
+        width=capture_width,
+        height=capture_height,
+        device_id=device_id,
+    )
+
+    if camera_mode == "real" and not getattr(camera, "available", False):
+        logger.error(
+            "Camera not detected at startup; continuing in degraded mode. "
+            "Sensors keep running; camera captures are skipped until the "
+            "service is restarted with a working camera. init_error=%s",
+            getattr(camera, "init_error", "unknown"),
+        )
 
     logger.info(
         "Collector started for device '%s' (%s) profile=%s/%s, "
-        "sensor interval %ds mode=%s, capture interval %ds mode=%s",
+        "sensor interval %ds mode=%s, capture interval %ds mode=%s "
+        "resolution=%dx%d light_condition=%s camera_available=%s",
         device_name,
         device_id,
         device["crop_type"],
@@ -234,11 +320,15 @@ def run() -> None:
         sensor_mode,
         capture_interval,
         camera_mode,
+        capture_width,
+        capture_height,
+        light_condition,
+        getattr(camera, "available", True),
     )
 
     camera_thread = threading.Thread(
         target=run_camera_loop,
-        args=(client, device_id, camera, capture_interval),
+        args=(client, device_id, camera, capture_interval, light_condition),
         name="camera-loop",
         daemon=True,
     )
@@ -249,6 +339,9 @@ def run() -> None:
     )
 
     camera_thread.join(timeout=capture_interval + 5)
+    close = getattr(camera, "close", None)
+    if callable(close):
+        close()
     logger.info("Collector stopped.")
 
 
