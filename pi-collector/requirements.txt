@@ -4,3 +4,5 @@
 supabase>=2.10.0
 python-dotenv>=1.0.0
 PyYAML>=6.0.2
+# DHT22 on GPIO (pulls in Adafruit-Blinka for `board` / CircuitPython on Pi)
+adafruit-circuitpython-dht>=4.0.0
