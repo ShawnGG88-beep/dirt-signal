@@ -1,8 +1,11 @@
 # Device registered in Supabase (see devices table)
 device_name: pi-garden-01
 
-# mock | real (real raises NotImplementedError until sensors are wired)
-sensor_mode: mock
+# Per-sensor: mock | real (real raises NotImplementedError until that sensor is wired)
+ds18b20_mode: mock
+dht22_mode: mock
+moisture_mode: mock
+ph_mode: mock
 
 # Production: 900 (15 minutes). Shorter interval for local development / smoke tests.
 read_interval_seconds: 30
@@ -11,7 +14,7 @@ read_interval_seconds: 30
 camera_mode: real
 
 # Production: 900 (15 minutes). Independent of sensor read interval.
-capture_interval_seconds: 30
+capture_interval_seconds: 900
 
 # Still capture resolution. Default is Camera Module 3 2304x1296 mode
 # (the sensor's reported ~56 fps mode), not full 4608x2592.

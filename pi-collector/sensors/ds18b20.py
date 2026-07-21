@@ -8,5 +8,5 @@ from sensors.base import SoilTempReading
 class Ds18b20Sensor:
     def read(self) -> SoilTempReading:
         raise NotImplementedError(
-            "DS18B20 not yet wired. Set sensor_mode: mock in config.yaml."
+            "DS18B20 not yet wired. Set ds18b20_mode: mock in config.yaml."
         )

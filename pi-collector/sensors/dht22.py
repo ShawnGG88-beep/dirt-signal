@@ -8,5 +8,5 @@ from sensors.base import AmbientReading
 class Dht22Sensor:
     def read(self) -> AmbientReading:
         raise NotImplementedError(
-            "DHT22 not yet wired. Set sensor_mode: mock in config.yaml."
+            "DHT22 not yet wired. Set dht22_mode: mock in config.yaml."
         )

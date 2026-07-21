@@ -8,5 +8,5 @@ from sensors.base import MoistureReading
 class Ads1115MoistureSensor:
     def read(self) -> MoistureReading:
         raise NotImplementedError(
-            "ADS1115 moisture sensor not yet wired. Set sensor_mode: mock in config.yaml."
+            "ADS1115 moisture sensor not yet wired. Set moisture_mode: mock in config.yaml."
         )

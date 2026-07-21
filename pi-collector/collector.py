@@ -274,7 +274,10 @@ def run() -> None:
     config = load_config()
 
     device_name: str = config["device_name"]
-    sensor_mode: SensorMode = config.get("sensor_mode", "mock")
+    ds18b20_mode: SensorMode = config.get("ds18b20_mode", "mock")
+    dht22_mode: SensorMode = config.get("dht22_mode", "mock")
+    moisture_mode: SensorMode = config.get("moisture_mode", "mock")
+    ph_mode: SensorMode = config.get("ph_mode", "mock")
     interval: int = int(config.get("read_interval_seconds", 900))
     camera_mode: CameraMode = config.get("camera_mode", "mock")
     capture_interval: int = int(config.get("capture_interval_seconds", 900))
@@ -292,7 +295,12 @@ def run() -> None:
     client = get_supabase()
     device = resolve_device(client, device_name)
     device_id = device["id"]
-    moisture, ph, ambient, soil_temp = build_sensors(sensor_mode)
+    moisture, ph, ambient, soil_temp = build_sensors(
+        ds18b20_mode=ds18b20_mode,
+        dht22_mode=dht22_mode,
+        moisture_mode=moisture_mode,
+        ph_mode=ph_mode,
+    )
     camera = build_camera(
         camera_mode,
         width=capture_width,
@@ -310,14 +318,19 @@ def run() -> None:
 
     logger.info(
         "Collector started for device '%s' (%s) profile=%s/%s, "
-        "sensor interval %ds mode=%s, capture interval %ds mode=%s "
+        "sensor interval %ds "
+        "(ds18b20=%s dht22=%s moisture=%s ph=%s), "
+        "capture interval %ds mode=%s "
         "resolution=%dx%d light_condition=%s camera_available=%s",
         device_name,
         device_id,
         device["crop_type"],
         device["lifecycle_stage"],
         interval,
-        sensor_mode,
+        ds18b20_mode,
+        dht22_mode,
+        moisture_mode,
+        ph_mode,
         capture_interval,
         camera_mode,
         capture_width,

@@ -8,5 +8,5 @@ from sensors.base import PhReading
 class Ads1115PhSensor:
     def read(self) -> PhReading:
         raise NotImplementedError(
-            "ADS1115 pH sensor not yet wired. Set sensor_mode: mock in config.yaml."
+            "ADS1115 pH sensor not yet wired. Set ph_mode: mock in config.yaml."
         )
