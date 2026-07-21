@@ -6,3 +6,5 @@ python-dotenv>=1.0.0
 PyYAML>=6.0.2
 # DHT22 on GPIO (pulls in Adafruit-Blinka for `board` / CircuitPython on Pi)
 adafruit-circuitpython-dht>=4.0.0
+# DS18B20 soil temp over 1-Wire (enable with raspi-config; default bus pin GPIO4)
+w1thermsensor>=2.3.0
