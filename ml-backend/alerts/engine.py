@@ -122,6 +122,9 @@ class AlertEngine:
             device_id = str(device["id"])
             crop = str(device.get("crop_type") or "tomato")
             stage = str(device.get("lifecycle_stage") or "mature")
+            from day_night import default_device_timezone
+
+            device_tz = str(device.get("timezone") or "").strip() or default_device_timezone()
             applicable = [
                 r
                 for r in rules
@@ -165,6 +168,7 @@ class AlertEngine:
                             max_gap_seconds=max_gap,
                             collector_interval_seconds=collector_interval,
                             now=now,
+                            timezone=device_tz,
                             events=events,
                             alert_is_open=open_row is not None,
                             open_metric_key=metric_key if open_row else None,
@@ -210,6 +214,7 @@ class AlertEngine:
                     max_gap_seconds=max_gap,
                     collector_interval_seconds=collector_interval,
                     now=now,
+                    timezone=device_tz,
                     events=events,
                     alert_is_open=open_row is not None,
                     open_metric_key=(

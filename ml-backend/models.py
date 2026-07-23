@@ -36,6 +36,8 @@ class LatestReadingResponse(BaseModel):
     crop_type: str = "tomato"
     lifecycle_stage: str = "mature"
     device_id: str | None = None
+    timezone: str = "Africa/Johannesburg"
+    season_start_date: str | None = None
 
 
 class ReadingsRangeResponse(BaseModel):
@@ -47,11 +49,15 @@ class ReadingsRangeResponse(BaseModel):
     crop_type: str = "tomato"
     lifecycle_stage: str = "mature"
     device_id: str | None = None
+    timezone: str = "Africa/Johannesburg"
+    season_start_date: str | None = None
 
 
 class DeviceProfileUpdate(BaseModel):
-    crop_type: str
-    lifecycle_stage: str
+    crop_type: str | None = None
+    lifecycle_stage: str | None = None
+    season_start_date: str | None = None
+    clear_season_start: bool = False
 
 
 class DeviceResponse(BaseModel):
@@ -59,6 +65,57 @@ class DeviceResponse(BaseModel):
     name: str
     crop_type: str
     lifecycle_stage: str
+    timezone: str = "Africa/Johannesburg"
+    season_start_date: str | None = None
+
+
+class DailyAggregateRow(BaseModel):
+    day: str
+    sample_count: int
+    coverage_hours: int
+    moisture_pct_min: float | None = None
+    moisture_pct_max: float | None = None
+    moisture_pct_mean: float | None = None
+    moisture_pct_count: int = 0
+    ph_min: float | None = None
+    ph_max: float | None = None
+    ph_mean: float | None = None
+    ph_count: int = 0
+    soil_temp_c_min: float | None = None
+    soil_temp_c_max: float | None = None
+    soil_temp_c_mean: float | None = None
+    soil_temp_c_count: int = 0
+    ambient_temp_c_min: float | None = None
+    ambient_temp_c_max: float | None = None
+    ambient_temp_c_mean: float | None = None
+    ambient_temp_c_count: int = 0
+    ambient_humidity_pct_min: float | None = None
+    ambient_humidity_pct_max: float | None = None
+    ambient_humidity_pct_mean: float | None = None
+    ambient_humidity_pct_count: int = 0
+    vpd_kpa_mean: float | None = None
+    vpd_kpa_count: int = 0
+    gdd_day: float | None = None
+    high_humidity_hours: int = 0
+    incomplete: bool = False
+
+
+class DailyAggregatesResponse(BaseModel):
+    device_name: str
+    device_id: str
+    timezone: str
+    season_start_date: str | None = None
+    crop_type: str
+    lifecycle_stage: str
+    gdd_base_c: float
+    from_at: datetime
+    to_at: datetime
+    days: list[DailyAggregateRow] = Field(default_factory=list)
+    count: int = 0
+    cumulative_gdd: float | None = None
+    days_elapsed: int | None = None
+    days_excluded: int = 0
+    cumulative_gdd_unavailable_reason: str | None = None
 
 
 class ProfileStageOption(BaseModel):
@@ -193,6 +250,9 @@ class AlertRule(BaseModel):
     snoozed_until: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    fired_7d: int = 0
+    fired_30d: int = 0
+    last_fired_at: datetime | None = None
 
 
 class AlertRulesListResponse(BaseModel):

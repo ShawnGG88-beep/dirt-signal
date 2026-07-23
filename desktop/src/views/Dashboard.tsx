@@ -6,6 +6,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import {
+  fetchDailyAggregates,
   fetchEvents,
   fetchHealth,
   fetchLatestReading,
@@ -27,11 +28,18 @@ import {
   formatRelativeAge,
   SystemStatusLine,
 } from "../components/SystemStatusLine";
+import { DEFAULT_DEVICE_TIMEZONE } from "../lib/dayNight";
+import {
+  dewPointC,
+  projectDrydown,
+  vapourPressureDeficitKpa,
+} from "../lib/derived";
 import { eventTypeLabel } from "../lib/eventTypes";
 import {
   DEFAULT_CROP_TYPE,
   DEFAULT_LIFECYCLE_STAGE,
   getScoringSemantic,
+  SAMPLING_LIMITATIONS,
   type ScoringSemantic,
 } from "../lib/growingConstants";
 import {
@@ -46,25 +54,34 @@ import {
   type MetricStatus,
   type RangePreset,
 } from "../lib/metrics";
+import { useAlertPoll } from "../lib/useAlertPoll";
 
 const DEVICE_NAME = "pi-garden-01";
 const POLL_MS = 30_000;
 const SPARK_WINDOW_LABEL = "6h";
+const VPD_LIMITATION = SAMPLING_LIMITATIONS[3];
 
 function scoreForCard(
   key: MetricKey,
   value: number | null | undefined,
   cropType: string,
   lifecycleStage: string,
-  recordedAt?: string | null,
+  recordedAt: string | null | undefined,
+  timeZone: string,
+  derived?: boolean,
 ): MetricScore {
   const semantic = getScoringSemantic(cropType, lifecycleStage);
-  if (key === "moisture_raw") {
+  if (derived || key === "moisture_raw") {
     return scoreMetricValue(value, null, semantic, { displayOnly: true });
   }
   if (key === "ambient_temp_c") {
     const at = recordedAt ?? new Date().toISOString();
-    const bounds = getAmbientBoundsForProfile(at, cropType, lifecycleStage);
+    const bounds = getAmbientBoundsForProfile(
+      at,
+      cropType,
+      lifecycleStage,
+      timeZone,
+    );
     return scoreMetricValue(value, bounds, semantic);
   }
   const bounds = getMetricBoundsForProfile(key, cropType, lifecycleStage);
@@ -202,8 +219,10 @@ function ContextMetricCard({
   score,
   fetching,
   onOpen,
-}: ContextCardProps) {
+  trendText,
+}: ContextCardProps & { trendText?: string | null }) {
   const isNull = value === null || value === undefined;
+  const derived = metric.derived === true;
   const status: MetricStatus = isNull ? "unknown" : score.status;
 
   function onKeyDown(e: ReactKeyboardEvent) {
@@ -220,20 +239,34 @@ function ContextMetricCard({
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={onKeyDown}
-      aria-label={`${metric.label}: ${formatMetricValue(value, metric.unit)}, ${STATUS_TEXT[status]}`}
+      aria-label={
+        derived
+          ? `${metric.label}: ${formatMetricValue(value, metric.unit)}`
+          : `${metric.label}: ${formatMetricValue(value, metric.unit)}, ${STATUS_TEXT[status]}`
+      }
     >
       <div className="metric-header">
         <span className="metric-label">{metric.label}</span>
-        <div className={`metric-status metric-status-${status}`}>
-          <span className="metric-status-glyph" aria-hidden="true">
-            {STATUS_GLYPH[status]}
-          </span>
-          <span className="metric-status-text">{STATUS_TEXT[status]}</span>
-        </div>
+        {!derived && (
+          <div className={`metric-status metric-status-${status}`}>
+            <span className="metric-status-glyph" aria-hidden="true">
+              {STATUS_GLYPH[status]}
+            </span>
+            <span className="metric-status-text">{STATUS_TEXT[status]}</span>
+          </div>
+        )}
       </div>
       <div className="metric-value metric-value-compact tabular-nums">
         {formatMetricValue(value, metric.unit)}
       </div>
+      {trendText && (
+        <div className="metric-trend muted">{trendText}</div>
+      )}
+      {derived && metric.key === "vpd_kpa" && (
+        <p className="metric-caveat muted" title={VPD_LIMITATION}>
+          Air VPD · leaf≈air assumption
+        </p>
+      )}
     </div>
   );
 }
@@ -357,6 +390,15 @@ export function Dashboard({
   const [lifecycleStage, setLifecycleStage] = useState<string>(
     DEFAULT_LIFECYCLE_STAGE,
   );
+  const [timeZone, setTimeZone] = useState(DEFAULT_DEVICE_TIMEZONE);
+  const [seasonStartDate, setSeasonStartDate] = useState<string | null>(null);
+  const [cumulativeGdd, setCumulativeGdd] = useState<number | null>(null);
+  const [gddDaysExcluded, setGddDaysExcluded] = useState(0);
+  const [gddUnavailable, setGddUnavailable] = useState<string | null>(
+    "no_season_start",
+  );
+  const [drydownLine, setDrydownLine] = useState<string | null>(null);
+  const { openNotifyCount, worstNotifySeverity } = useAlertPoll();
   const [sidecarReachable, setSidecarReachable] = useState<boolean | null>(
     null,
   );
@@ -430,6 +472,8 @@ export function Dashboard({
         setDeviceId(latest.device_id ?? latest.reading?.device_id ?? null);
         setCropType(latest.crop_type ?? DEFAULT_CROP_TYPE);
         setLifecycleStage(latest.lifecycle_stage ?? DEFAULT_LIFECYCLE_STAGE);
+        setTimeZone(latest.timezone ?? DEFAULT_DEVICE_TIMEZONE);
+        setSeasonStartDate(latest.season_start_date ?? null);
         setLatestError(null);
       })
       .catch((err) => {
@@ -438,10 +482,68 @@ export function Dashboard({
         );
       });
 
+    const gddTask = fetchDailyAggregates(
+      new Date(Date.now() - 90 * 24 * 60 * 60 * 1000),
+      new Date(),
+      DEVICE_NAME,
+    )
+      .then((agg) => {
+        setCumulativeGdd(agg.cumulative_gdd);
+        setGddDaysExcluded(agg.days_excluded);
+        setGddUnavailable(agg.cumulative_gdd_unavailable_reason);
+        setSeasonStartDate(agg.season_start_date);
+      })
+      .catch(() => {
+        /* GDD is additive context; keep prior */
+      });
+
+    const drydownTask = Promise.all([
+      fetchReadingsRange(
+        new Date(Date.now() - 72 * 60 * 60 * 1000),
+        new Date(),
+        DEVICE_NAME,
+        500,
+      ),
+      fetchEvents({
+        deviceName: DEVICE_NAME,
+        fromAt: new Date(Date.now() - 72 * 60 * 60 * 1000),
+        toAt: new Date(),
+        limit: 200,
+      }),
+      fetchLatestReading(DEVICE_NAME),
+    ])
+      .then(([range, eventsRes, latest]) => {
+        const crop = latest.crop_type ?? DEFAULT_CROP_TYPE;
+        const stage = latest.lifecycle_stage ?? DEFAULT_LIFECYCLE_STAGE;
+        const bounds = getMetricBoundsForProfile("moisture_pct", crop, stage);
+        const result = projectDrydown(range.readings, eventsRes.events, {
+          moistureLowerBound: bounds?.min ?? null,
+          now: new Date(),
+        });
+        if (result.projection && result.projection.hours_to_lower_bound > 0) {
+          const h = result.projection.hours_to_lower_bound;
+          const hoursLabel =
+            h >= 10 ? `~${Math.round(h)}h` : `~${h.toFixed(1)}h`;
+          setDrydownLine(
+            `reaches ${result.projection.moisture_lower_bound.toFixed(0)}% in ${hoursLabel} at current rate`,
+          );
+        } else {
+          setDrydownLine(null);
+        }
+      })
+      .catch(() => setDrydownLine(null));
+
     const rangeTask = refreshRange();
     const eventsTask = refreshEvents();
 
-    await Promise.allSettled([healthTask, latestTask, rangeTask, eventsTask]);
+    await Promise.allSettled([
+      healthTask,
+      latestTask,
+      rangeTask,
+      eventsTask,
+      gddTask,
+      drydownTask,
+    ]);
     setLastPollAt(new Date());
     setFetching(false);
   }, [refreshRange, refreshEvents]);
@@ -481,20 +583,90 @@ export function Dashboard({
   }
 
   function sparkFor(key: MetricKey): number[] {
+    if (key === "vpd_kpa") {
+      return history
+        .map((r) =>
+          vapourPressureDeficitKpa(r.ambient_temp_c, r.ambient_humidity_pct),
+        )
+        .filter((v): v is number => v !== null);
+    }
+    if (key === "dew_point_c") {
+      return history
+        .map((r) => dewPointC(r.ambient_temp_c, r.ambient_humidity_pct))
+        .filter((v): v is number => v !== null);
+    }
     return history
-      .map((r) => r[key])
-      .filter((v): v is number => v !== null && v !== undefined);
+      .map((r) => r[key as keyof SensorReading])
+      .filter((v): v is number => typeof v === "number");
   }
 
   function valueFor(key: MetricKey): number | null | undefined {
-    return reading?.[key];
+    if (key === "vpd_kpa") {
+      return vapourPressureDeficitKpa(
+        reading?.ambient_temp_c,
+        reading?.ambient_humidity_pct,
+      );
+    }
+    if (key === "dew_point_c") {
+      return dewPointC(reading?.ambient_temp_c, reading?.ambient_humidity_pct);
+    }
+    return reading?.[key as keyof SensorReading] as number | null | undefined;
   }
+
+  function trendFor(key: MetricKey): string | null {
+    const values = sparkFor(key);
+    if (values.length < 2) return null;
+    const delta = values[values.length - 1] - values[0];
+    if (Math.abs(delta) < 1e-6) return `→ / ${SPARK_WINDOW_LABEL}`;
+    const abs = Math.abs(delta);
+    const formatted = abs >= 10 ? abs.toFixed(0) : abs.toFixed(2);
+    return `${delta > 0 ? "↑" : "↓"} ${formatted} / ${SPARK_WINDOW_LABEL}`;
+  }
+
+  const gddDaysElapsed =
+    seasonStartDate != null
+      ? Math.max(
+          1,
+          Math.ceil(
+            (Date.now() - new Date(`${seasonStartDate}T00:00:00Z`).getTime()) /
+              (24 * 60 * 60 * 1000),
+          ),
+        )
+      : null;
 
   return (
     <div className="dashboard">
       <header className="dashboard-header">
         <div>
           <h1>Dirt Signal</h1>
+          <p className="dashboard-gdd muted">
+            {gddUnavailable === "no_season_start" || seasonStartDate == null ? (
+              <>
+                Degree days unavailable —{" "}
+                <button
+                  type="button"
+                  className="link-btn"
+                  onClick={() => setProfileOpen(true)}
+                >
+                  set season start
+                </button>
+              </>
+            ) : (
+              <>
+                {cumulativeGdd != null
+                  ? `${cumulativeGdd.toFixed(0)} °C·d`
+                  : "—"}{" "}
+                · {gddDaysElapsed}d since season start
+                {gddDaysExcluded > 0
+                  ? ` · ${gddDaysExcluded}d excluded (sparse)`
+                  : ""}
+                <span className="dashboard-gdd-note" title="Indoor degree days under artificial light are not comparable to field GDD / Winkler.">
+                  {" "}
+                  (device degree days)
+                </span>
+              </>
+            )}
+          </p>
         </div>
         <SystemStatusLine
           sidecarReachable={sidecarReachable}
@@ -506,6 +678,11 @@ export function Dashboard({
           lastPollAt={lastPollAt}
           staleAfterMs={staleAfterMs}
           onOpenProfile={() => setProfileOpen(true)}
+          openAlertCount={openNotifyCount}
+          worstAlertSeverity={worstNotifySeverity}
+          onOpenAlerts={() => {
+            window.location.hash = "#/alerts";
+          }}
         />
       </header>
 
@@ -535,20 +712,26 @@ export function Dashboard({
               cropType,
               lifecycleStage,
               reading?.recorded_at,
+              timeZone,
+              metric.derived,
             );
             return (
-              <PrimaryMetricCard
-                key={metric.key}
-                metric={metric}
-                value={value}
-                score={score}
-                sparkValues={sparkFor(metric.key)}
-                scoringSemantic={semantic}
-                fetching={fetching}
-                rangeError={rangeError}
-                onRetryRange={() => void refreshRange()}
-                onOpen={() => openMetric(metric.key)}
-              />
+              <div key={metric.key} className="primary-metric-wrap">
+                <PrimaryMetricCard
+                  metric={metric}
+                  value={value}
+                  score={score}
+                  sparkValues={sparkFor(metric.key)}
+                  scoringSemantic={semantic}
+                  fetching={fetching}
+                  rangeError={rangeError}
+                  onRetryRange={() => void refreshRange()}
+                  onOpen={() => openMetric(metric.key)}
+                />
+                {metric.key === "moisture_pct" && drydownLine && (
+                  <p className="drydown-line muted">{drydownLine}</p>
+                )}
+              </div>
             );
           })}
         </section>
@@ -562,6 +745,8 @@ export function Dashboard({
               cropType,
               lifecycleStage,
               reading?.recorded_at,
+              timeZone,
+              metric.derived,
             );
             return (
               <ContextMetricCard
@@ -571,6 +756,7 @@ export function Dashboard({
                 score={score}
                 fetching={fetching}
                 onOpen={() => openMetric(metric.key)}
+                trendText={metric.derived ? trendFor(metric.key) : null}
               />
             );
           })}
@@ -659,9 +845,11 @@ export function Dashboard({
               deviceId={deviceId}
               cropType={cropType}
               lifecycleStage={lifecycleStage}
-              onProfileSaved={(nextCrop, nextStage) => {
+              seasonStartDate={seasonStartDate}
+              onProfileSaved={(nextCrop, nextStage, nextSeason) => {
                 setCropType(nextCrop);
                 setLifecycleStage(nextStage);
+                if (nextSeason !== undefined) setSeasonStartDate(nextSeason);
                 onProfileChanged();
                 setProfileOpen(false);
                 void refresh();

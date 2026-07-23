@@ -57,6 +57,7 @@ def _ctx(
     now: datetime | None = None,
     crop_type: str = "tomato",
     lifecycle_stage: str = "mature",
+    timezone_name: str = "UTC",
 ) -> EvalContext:
     return EvalContext(
         readings=readings,
@@ -66,6 +67,7 @@ def _ctx(
         max_gap_seconds=max_gap,
         collector_interval_seconds=collector_interval,
         now=now or datetime(2026, 7, 23, 2, 30, tzinfo=timezone.utc),
+        timezone=timezone_name,
         events=events,
         alert_is_open=alert_is_open,
         open_metric_key=open_metric_key,

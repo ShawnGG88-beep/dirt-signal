@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 from constants import ScoringSemantic, get_crop_stage, get_scoring_semantic
+from day_night import is_day_period
 
 MetricKey = Literal[
     "moisture_pct",
@@ -47,6 +48,7 @@ def _stage_bounds(
     key: MetricKey,
     stage: dict[str, Any],
     recorded_at: datetime | None,
+    tz_name: str | None,
 ) -> MetricBounds | None:
     if key == "moisture_pct":
         lo = stage.get("moisture_min_pct")
@@ -83,10 +85,7 @@ def _stage_bounds(
         night_hi = stage.get("ambient_temp_night_max_c")
         if None in (day_lo, day_hi, night_lo, night_hi) or recorded_at is None:
             return None
-        hour = recorded_at.hour if recorded_at.tzinfo else recorded_at.hour
-        # Match desktop: local hour from the datetime as stored (UTC).
-        is_day = 6 <= hour < 18
-        if is_day:
+        if is_day_period(recorded_at, tz_name):
             return MetricBounds(float(day_lo), float(day_hi))
         return MetricBounds(float(night_lo), float(night_hi))
 
@@ -98,9 +97,10 @@ def get_metric_bounds(
     crop_type: str | None,
     lifecycle_stage: str | None,
     recorded_at: datetime | None = None,
+    tz_name: str | None = None,
 ) -> MetricBounds | None:
     stage = get_crop_stage(crop_type, lifecycle_stage)
-    return _stage_bounds(key, stage, recorded_at)
+    return _stage_bounds(key, stage, recorded_at, tz_name)
 
 
 def score_metric_value(
@@ -139,6 +139,7 @@ def score_reading_metric(
     key: MetricKey,
     crop_type: str | None,
     lifecycle_stage: str | None,
+    tz_name: str | None = None,
 ) -> MetricScore:
     raw = reading.get(key)
     value = float(raw) if raw is not None else None
@@ -147,7 +148,9 @@ def score_reading_metric(
         from datetime import datetime as dt
 
         recorded_at = dt.fromisoformat(recorded_at.replace("Z", "+00:00"))
-    bounds = get_metric_bounds(key, crop_type, lifecycle_stage, recorded_at)
+    bounds = get_metric_bounds(
+        key, crop_type, lifecycle_stage, recorded_at, tz_name
+    )
     semantic = get_scoring_semantic(crop_type, lifecycle_stage)
     return score_metric_value(value, bounds, semantic)
 

@@ -1773,3 +1773,303 @@ body {
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+/* —— System status alert badge —— */
+
+.system-status-alert-badge {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 0.72rem;
+  padding: 0.15rem 0.45rem;
+  cursor: pointer;
+  text-transform: lowercase;
+}
+
+.system-status-alert-badge:hover {
+  border-color: var(--primary);
+}
+
+.system-status-alert-critical {
+  color: #ff4444;
+  border-color: #ff4444;
+}
+
+.system-status-alert-warning {
+  color: var(--accent-orange);
+  border-color: var(--accent-orange);
+}
+
+.system-status-alert-info {
+  color: var(--accent-blue);
+  border-color: var(--accent-blue);
+}
+
+/* —— Alerts extras —— */
+
+.alerts-rule-firings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--fg);
+}
+
+.alerts-fire-caution {
+  color: var(--accent-orange);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.alerts-promote-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.alerts-log-offer {
+  border: 1px solid var(--accent-blue);
+  background: rgba(16, 126, 236, 0.06);
+  padding: 0.75rem 0.9rem;
+  font-size: 0.8rem;
+}
+
+.alerts-log-offer-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.55rem;
+}
+
+.alerts-history-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.65rem;
+}
+
+.alerts-history-toolbar h2 {
+  margin-bottom: 0;
+}
+
+.event-popover-alert {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  font-size: 0.75rem;
+}
+
+.event-rail-marker-alert {
+  font-weight: 700;
+}
+
+/* —— Dashboard GDD / drydown —— */
+
+.dashboard-gdd {
+  font-size: 0.8rem;
+  margin-top: 0.15rem;
+}
+
+.dashboard-gdd-note {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.drydown-line {
+  font-size: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.link-btn {
+  background: transparent;
+  border: none;
+  color: var(--accent-blue);
+  font-family: inherit;
+  font-size: inherit;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link-btn:hover {
+  color: var(--primary);
+}
+
+.metric-caveat {
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+/* —— Reports season / incomplete days —— */
+
+.reports-season-summary {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  padding: 0.85rem 1rem;
+}
+
+.reports-season-summary h2 {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 0.65rem;
+}
+
+.reports-season-dl {
+  display: grid;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.reports-season-dl > div {
+  display: grid;
+  grid-template-columns: 11rem 1fr;
+  gap: 0.5rem;
+}
+
+.reports-season-dl dt {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.7rem;
+}
+
+.report-derived-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  margin-bottom: 0.5rem;
+  color: var(--fg);
+}
+
+.report-day-incomplete {
+  border-color: var(--accent-orange);
+  opacity: 0.92;
+}
+
+.report-incomplete-badge {
+  margin-left: 0.5rem;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent-orange);
+  border: 1px solid var(--accent-orange);
+  padding: 0.1rem 0.35rem;
+  vertical-align: middle;
+}
+
+.reports-derived-caveats {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.reports-derived-caveats h2 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg);
+  margin-bottom: 0.5rem;
+}
+
+.reports-derived-caveats ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.plant-profile-season-note {
+  font-size: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.system-status-alert-badge {
+  margin-left: 0.5rem;
+  border: 1px solid currentColor;
+  background: transparent;
+  font-family: inherit;
+  font-size: 0.7rem;
+  padding: 0.15rem 0.45rem;
+  cursor: pointer;
+}
+.system-status-alert-critical { color: #ff4444; }
+.system-status-alert-warning { color: #FF8A00; }
+.system-status-alert-info { color: #107EEC; }
+
+.alerts-rule-firings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  margin: 0.35rem 0 0.15rem;
+}
+.alerts-promote-wrap {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+.alerts-fire-caution {
+  color: #FF8A00;
+  font-size: 0.7rem;
+}
+.alerts-log-offer {
+  border: 1px solid var(--border);
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0;
+}
+.alerts-log-offer-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.alerts-history-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.drydown-line {
+  font-size: 0.75rem;
+  margin: 0.25rem 0 0.5rem 0.15rem;
+}
+.dashboard-gdd {
+  font-size: 0.75rem;
+  margin-top: 0.25rem;
+}
+.dashboard-gdd-note { opacity: 0.7; }
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+.metric-caveat,
+.metric-trend {
+  font-size: 0.65rem;
+  margin-top: 0.2rem;
+}
+.primary-metric-wrap { display: contents; }
+.day-incomplete {
+  opacity: 0.75;
+  font-style: italic;
+}
+.event-rail-marker-alert {
+  font-weight: 700;
+}

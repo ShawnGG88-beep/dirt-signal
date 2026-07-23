@@ -6,6 +6,7 @@ import {
   type PlantEvent,
   type SensorReading,
 } from "../lib/api";
+import { DEFAULT_DEVICE_TIMEZONE } from "../lib/dayNight";
 import {
   extractMetricValues,
   formatMetricValue,
@@ -74,6 +75,7 @@ export function MetricDetailModal({
   const metric = getMetric(metricKey);
   const [readings, setReadings] = useState<SensorReading[]>([]);
   const [events, setEvents] = useState<PlantEvent[]>([]);
+  const [timeZone, setTimeZone] = useState(DEFAULT_DEVICE_TIMEZONE);
   const [from, setFrom] = useState(() => rangeFromPreset(preset).from);
   const [to, setTo] = useState(() => rangeFromPreset(preset).to);
   const [loading, setLoading] = useState(true);
@@ -127,6 +129,7 @@ export function MetricDetailModal({
         if (!cancelled) {
           setReadings(range.readings);
           setEvents(eventsResult.events);
+          setTimeZone(range.timezone ?? DEFAULT_DEVICE_TIMEZONE);
           setError(null);
         }
       } catch (err) {
@@ -240,7 +243,8 @@ export function MetricDetailModal({
               height={320}
               deviceCropType={deviceCropType}
               deviceLifecycleStage={deviceLifecycleStage}
-              segmentByProfile
+              timeZone={timeZone}
+              segmentByProfile={!metric.derived}
               events={events}
               fromAt={from}
               toAt={to}

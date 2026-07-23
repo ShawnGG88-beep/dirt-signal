@@ -16,6 +16,10 @@ interface SystemStatusLineProps {
   /** Derived from collector interval (2x); falls back to DEFAULT_STALE_AFTER_MS. */
   staleAfterMs?: number;
   onOpenProfile: () => void;
+  /** Promoted open-alert count. Zero renders nothing. Separate from health. */
+  openAlertCount?: number;
+  worstAlertSeverity?: "info" | "warning" | "critical" | null;
+  onOpenAlerts?: () => void;
 }
 
 const STATE_GLYPH: Record<SystemHealthState, string> = {
@@ -97,6 +101,9 @@ export function SystemStatusLine({
   lastPollAt,
   staleAfterMs = DEFAULT_STALE_AFTER_MS,
   onOpenProfile,
+  openAlertCount = 0,
+  worstAlertSeverity = null,
+  onOpenAlerts,
 }: SystemStatusLineProps) {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [expanded, setExpanded] = useState(false);
@@ -170,6 +177,17 @@ export function SystemStatusLine({
         >
           {cropType}/{lifecycleStage}
         </button>
+        {openAlertCount > 0 && (
+          <button
+            type="button"
+            className={`system-status-alert-badge system-status-alert-${worstAlertSeverity ?? "info"}`}
+            onClick={onOpenAlerts}
+            title="Open alerts"
+            aria-label={`${openAlertCount} open alerts`}
+          >
+            {openAlertCount} alert{openAlertCount === 1 ? "" : "s"}
+          </button>
+        )}
       </div>
 
       {expanded && (

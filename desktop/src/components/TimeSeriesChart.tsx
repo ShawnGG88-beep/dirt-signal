@@ -8,12 +8,16 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { PlantEvent, SensorReading } from "../lib/api";
+import type { AlertEvent, PlantEvent, SensorReading } from "../lib/api";
 import { getScoringSemantic } from "../lib/growingConstants";
+import { DEFAULT_DEVICE_TIMEZONE } from "../lib/dayNight";
 import {
   effectiveReadingProfile,
+  getAmbientBoundsForProfile,
   getMetricBoundsForProfile,
+  isDerivedMetric,
   profileSegmentKey,
+  readingMetricValue,
   type MetricBounds,
   type MetricKey,
 } from "../lib/metrics";
@@ -29,13 +33,17 @@ interface TimeSeriesChartProps {
   /** Device current profile: fallback when reading provenance is null. */
   deviceCropType?: string;
   deviceLifecycleStage?: string;
+  /** Device IANA timezone for ambient day/night band scoring. */
+  timeZone?: string;
   /** When true, segment at profile changeovers and draw per-segment bands. */
   segmentByProfile?: boolean;
   /** Annotation markers for the same window as readings. */
   events?: PlantEvent[];
+  alerts?: AlertEvent[];
   fromAt?: Date;
   toAt?: Date;
   enabledEventTypes?: Set<PlantEventTypeKey>;
+  showAlerts?: boolean;
   onEventsChanged?: () => void;
 }
 
@@ -86,18 +94,39 @@ export function annotateProfileSegments(
   metricKey: MetricKey,
   deviceCropType: string,
   deviceLifecycleStage: string,
+  timeZone: string = DEFAULT_DEVICE_TIMEZONE,
 ): { segments: ProfileSegment[]; points: AnnotatedPoint[] } {
+  const derived = isDerivedMetric(metricKey);
   const sorted = [...readings]
-    .filter((r) => r[metricKey] !== null && r[metricKey] !== undefined)
+    .map((r) => ({ reading: r, value: readingMetricValue(r, metricKey) }))
+    .filter((row) => row.value !== null)
     .sort(
       (a, b) =>
-        new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime(),
+        new Date(a.reading.recorded_at).getTime() -
+        new Date(b.reading.recorded_at).getTime(),
     );
 
   const segments: ProfileSegment[] = [];
   const points: AnnotatedPoint[] = [];
 
-  for (const reading of sorted) {
+  function boundsForSegment(
+    cropType: string,
+    lifecycleStage: string,
+    startAt: string,
+  ): MetricBounds | null {
+    if (derived) return null;
+    if (metricKey === "ambient_temp_c") {
+      return getAmbientBoundsForProfile(
+        startAt,
+        cropType,
+        lifecycleStage,
+        timeZone,
+      );
+    }
+    return getMetricBoundsForProfile(metricKey, cropType, lifecycleStage);
+  }
+
+  for (const { reading, value } of sorted) {
     const eff = effectiveReadingProfile(
       reading,
       deviceCropType,
@@ -119,10 +148,10 @@ export function annotateProfileSegments(
         lifecycleStage: eff.lifecycleStage,
         label: `${eff.cropType}/${eff.lifecycleStage}`,
         provenanceKnown: eff.provenanceKnown,
-        bounds: getMetricBoundsForProfile(
-          metricKey,
+        bounds: boundsForSegment(
           eff.cropType,
           eff.lifecycleStage,
+          reading.recorded_at,
         ),
         scoringSemantic: getScoringSemantic(eff.cropType, eff.lifecycleStage),
         startAt: reading.recorded_at,
@@ -131,7 +160,7 @@ export function annotateProfileSegments(
     }
     points.push({
       recorded_at: reading.recorded_at,
-      value: reading[metricKey] as number,
+      value: value as number,
       segmentId: segments[segments.length - 1].id,
       provenanceKnown: eff.provenanceKnown,
     });
@@ -150,11 +179,14 @@ export function TimeSeriesChart({
   compact = false,
   deviceCropType = "tomato",
   deviceLifecycleStage = "mature",
+  timeZone = DEFAULT_DEVICE_TIMEZONE,
   segmentByProfile = false,
   events,
+  alerts,
   fromAt,
   toAt,
   enabledEventTypes,
+  showAlerts = true,
   onEventsChanged,
 }: TimeSeriesChartProps) {
   const { segments, points } = annotateProfileSegments(
@@ -162,7 +194,9 @@ export function TimeSeriesChart({
     metricKey,
     deviceCropType,
     deviceLifecycleStage,
+    timeZone,
   );
+  const derived = isDerivedMetric(metricKey);
 
   const showRail =
     events != null &&
@@ -180,9 +214,11 @@ export function TimeSeriesChart({
         {showRail && (
           <EventMarkerRail
             events={events}
+            alerts={alerts}
             fromAt={fromAt}
             toAt={toAt}
             enabledTypes={enabledEventTypes}
+            showAlerts={showAlerts}
             onEventsChanged={onEventsChanged}
             compact={compact}
           />
@@ -215,17 +251,26 @@ export function TimeSeriesChart({
     ? segments.map((s) => `seg_${s.id}`)
     : ["value"];
 
-  const showBands = segmentByProfile && segments.some((s) => s.bounds !== null);
+  const showBands =
+    !derived && segmentByProfile && segments.some((s) => s.bounds !== null);
 
-  const singleBounds = !multiSegment
-    ? segmentByProfile
-      ? (segments[0]?.bounds ?? null)
-      : getMetricBoundsForProfile(
-          metricKey,
-          deviceCropType,
-          deviceLifecycleStage,
-        )
-    : null;
+  const singleBounds =
+    !derived && !multiSegment
+      ? segmentByProfile
+        ? (segments[0]?.bounds ?? null)
+        : metricKey === "ambient_temp_c" && points.length > 0
+          ? getAmbientBoundsForProfile(
+              points[0].recorded_at,
+              deviceCropType,
+              deviceLifecycleStage,
+              timeZone,
+            )
+          : getMetricBoundsForProfile(
+              metricKey,
+              deviceCropType,
+              deviceLifecycleStage,
+            )
+      : null;
 
   const hasUnknownProvenance = points.some((p) => !p.provenanceKnown);
 
@@ -349,9 +394,11 @@ export function TimeSeriesChart({
       {showRail && (
         <EventMarkerRail
           events={events}
+          alerts={alerts}
           fromAt={fromAt}
           toAt={toAt}
           enabledTypes={enabledEventTypes}
+          showAlerts={showAlerts}
           onEventsChanged={onEventsChanged}
           compact={compact}
         />

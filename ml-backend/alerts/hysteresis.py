@@ -100,10 +100,26 @@ def deadband_bounds(
     return (low + db, high - db)
 
 
-def is_night_hour(recorded_at: datetime, *, night_start: int = 18, night_end: int = 6) -> bool:
-    """Local-clock night using the reading's timezone (UTC if naive)."""
-    at = ensure_utc(recorded_at)
-    hour = at.hour
+def is_night_hour(
+    recorded_at: datetime,
+    tz_name: str | None = None,
+    *,
+    night_start: int = 18,
+    night_end: int = 6,
+) -> bool:
+    """Device-local night. Prefer is_night_period from day_night for defaults.
+
+    night_start/night_end are retained for callers that override the band;
+    the default 18→06 matches DAY_START/DAY_END in day_night.py.
+    """
+    from day_night import DAY_END_HOUR, DAY_START_HOUR, local_hour
+
+    if night_start == DAY_END_HOUR and night_end == DAY_START_HOUR:
+        from day_night import is_night_period
+
+        return is_night_period(recorded_at, tz_name)
+
+    hour = local_hour(recorded_at, tz_name)
     if night_start > night_end:
         return hour >= night_start or hour < night_end
     return night_start <= hour < night_end

@@ -11,6 +11,7 @@ import {
   type AppView,
 } from "./lib/hashRoute";
 import type { MetricKey, RangePreset } from "./lib/metrics";
+import { AlertPollProvider } from "./lib/useAlertPoll";
 import "./styles/global.css";
 
 const NAV: { id: AppView; label: string }[] = [
@@ -59,83 +60,85 @@ function App() {
     route.view === "metric" ? route.range : "6h";
 
   return (
-    <main className="app">
-      <nav className="app-nav" aria-label="Main">
-        {NAV.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className={
-              activeNav === item.id
-                ? "app-nav-btn app-nav-btn-active"
-                : "app-nav-btn"
-            }
-            onClick={() => {
-              if (item.id === "dashboard") go({ view: "dashboard" });
-              else if (item.id === "history") {
-                go({
-                  view: "history",
-                  range: route.view === "history" ? route.range : "24h",
-                });
-              } else if (item.id === "reports") {
-                go({
-                  view: "reports",
-                  range: route.view === "reports" ? route.range : "30d",
-                });
-              } else {
-                go({ view: "alerts" });
+    <AlertPollProvider>
+      <main className="app">
+        <nav className="app-nav" aria-label="Main">
+          {NAV.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={
+                activeNav === item.id
+                  ? "app-nav-btn app-nav-btn-active"
+                  : "app-nav-btn"
+              }
+              onClick={() => {
+                if (item.id === "dashboard") go({ view: "dashboard" });
+                else if (item.id === "history") {
+                  go({
+                    view: "history",
+                    range: route.view === "history" ? route.range : "24h",
+                  });
+                } else if (item.id === "reports") {
+                  go({
+                    view: "reports",
+                    range: route.view === "reports" ? route.range : "30d",
+                  });
+                } else {
+                  go({ view: "alerts" });
+                }
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+
+        {(route.view === "dashboard" || route.view === "metric") && (
+          <Dashboard
+            profileEpoch={profileEpoch}
+            eventsEpoch={eventsEpoch}
+            onProfileChanged={() => setProfileEpoch((n) => n + 1)}
+            onEventsChanged={() => setEventsEpoch((n) => n + 1)}
+            detailMetric={detailMetric}
+            detailRange={detailRange}
+            onOpenMetric={(key) => go({ view: "metric", key, range: "6h" })}
+            onCloseMetric={() => {
+              window.history.replaceState(
+                null,
+                "",
+                formatHash({ view: "dashboard" }),
+              );
+              setRoute({ view: "dashboard" });
+            }}
+            onDetailRangeChange={(range) => {
+              if (route.view === "metric") {
+                go({ view: "metric", key: route.key, range });
               }
             }}
-          >
-            {item.label}
-          </button>
-        ))}
-      </nav>
-
-      {(route.view === "dashboard" || route.view === "metric") && (
-        <Dashboard
-          profileEpoch={profileEpoch}
-          eventsEpoch={eventsEpoch}
-          onProfileChanged={() => setProfileEpoch((n) => n + 1)}
-          onEventsChanged={() => setEventsEpoch((n) => n + 1)}
-          detailMetric={detailMetric}
-          detailRange={detailRange}
-          onOpenMetric={(key) => go({ view: "metric", key, range: "6h" })}
-          onCloseMetric={() => {
-            window.history.replaceState(
-              null,
-              "",
-              formatHash({ view: "dashboard" }),
-            );
-            setRoute({ view: "dashboard" });
-          }}
-          onDetailRangeChange={(range) => {
-            if (route.view === "metric") {
-              go({ view: "metric", key: route.key, range });
-            }
-          }}
-          onOpenHistory={(range) => go({ view: "history", range })}
-        />
-      )}
-      {route.view === "history" && (
-        <History
-          profileEpoch={profileEpoch}
-          eventsEpoch={eventsEpoch}
-          range={route.range}
-          onRangeChange={(range) => go({ view: "history", range })}
-          onEventsChanged={() => setEventsEpoch((n) => n + 1)}
-        />
-      )}
-      {route.view === "reports" && (
-        <Reports
-          profileEpoch={profileEpoch}
-          eventsEpoch={eventsEpoch}
-          range={route.range}
-          onRangeChange={(range) => go({ view: "reports", range })}
-        />
-      )}
-      {route.view === "alerts" && <Alerts />}
-    </main>
+            onOpenHistory={(range) => go({ view: "history", range })}
+          />
+        )}
+        {route.view === "history" && (
+          <History
+            profileEpoch={profileEpoch}
+            eventsEpoch={eventsEpoch}
+            range={route.range}
+            onRangeChange={(range) => go({ view: "history", range })}
+            onEventsChanged={() => setEventsEpoch((n) => n + 1)}
+          />
+        )}
+        {route.view === "reports" && (
+          <Reports
+            profileEpoch={profileEpoch}
+            eventsEpoch={eventsEpoch}
+            range={route.range}
+            onRangeChange={(range) => go({ view: "reports", range })}
+          />
+        )}
+        {route.view === "alerts" && <Alerts />}
+      </main>
+    </AlertPollProvider>
   );
 }
 

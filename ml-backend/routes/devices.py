@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+import re
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 
@@ -20,6 +21,8 @@ from models import (
 router = APIRouter(prefix="/devices", tags=["devices"])
 
 logger = logging.getLogger(__name__)
+
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def _stage_display_name(stage_key: str) -> str:
@@ -66,8 +69,6 @@ def _insert_stage_change_event(
         "quantity_unit": None,
         "note": note,
         "source": "system",
-        # Stamp the NEW profile: the changeover is the moment the new
-        # profile takes effect.
         "crop_type_at_event": new_crop,
         "lifecycle_stage_at_event": new_stage,
     }
@@ -81,6 +82,18 @@ def _insert_stage_change_event(
             device_id,
             note,
         )
+
+
+def _device_response(row: dict) -> DeviceResponse:
+    season = row.get("season_start_date")
+    return DeviceResponse(
+        id=str(row["id"]),
+        name=str(row.get("name") or ""),
+        crop_type=str(row.get("crop_type") or "tomato"),
+        lifecycle_stage=str(row.get("lifecycle_stage") or "mature"),
+        timezone=str(row.get("timezone") or "Africa/Johannesburg"),
+        season_start_date=str(season)[:10] if season else None,
+    )
 
 
 @router.get(
@@ -106,45 +119,69 @@ def patch_device_profile(
     device_id: str,
     body: DeviceProfileUpdate,
 ) -> DeviceResponse:
-    """Reassign this device's single planting profile (Case A replant)."""
+    """Update crop/stage and/or season_start_date for this device."""
     try:
         existing = resolve_device_by_id(device_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    crop = CROP_PROFILES.get(body.crop_type)
-    if crop is None:
-        valid = ", ".join(sorted(CROP_PROFILES.keys()))
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Unknown crop_type '{body.crop_type}'. "
-                f"Valid values: {valid}."
-            ),
-        )
+    patch: dict = {}
+    new_crop = body.crop_type if body.crop_type is not None else existing["crop_type"]
+    new_stage = (
+        body.lifecycle_stage
+        if body.lifecycle_stage is not None
+        else existing["lifecycle_stage"]
+    )
+    assert new_crop is not None and new_stage is not None
 
-    stages = crop.get("stages") or {}
-    if body.lifecycle_stage not in stages:
-        valid = ", ".join(sorted(stages.keys())) or "(none)"
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Unknown lifecycle_stage '{body.lifecycle_stage}' for "
-                f"crop_type '{body.crop_type}'. Valid values: {valid}."
-            ),
-        )
+    if body.crop_type is not None or body.lifecycle_stage is not None:
+        crop = CROP_PROFILES.get(str(new_crop))
+        if crop is None:
+            valid = ", ".join(sorted(CROP_PROFILES.keys()))
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Unknown crop_type '{new_crop}'. "
+                    f"Valid values: {valid}."
+                ),
+            )
+        stages = crop.get("stages") or {}
+        if new_stage not in stages:
+            valid = ", ".join(sorted(stages.keys())) or "(none)"
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Unknown lifecycle_stage '{new_stage}' for "
+                    f"crop_type '{new_crop}'. Valid values: {valid}."
+                ),
+            )
+        patch["crop_type"] = new_crop
+        patch["lifecycle_stage"] = new_stage
+
+    if body.clear_season_start:
+        patch["season_start_date"] = None
+    elif body.season_start_date is not None:
+        raw = body.season_start_date.strip()
+        if not _DATE_RE.match(raw):
+            raise HTTPException(
+                status_code=400,
+                detail="season_start_date must be YYYY-MM-DD",
+            )
+        try:
+            date.fromisoformat(raw)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail="season_start_date must be a valid calendar date",
+            ) from exc
+        patch["season_start_date"] = raw
+
+    if not patch:
+        raise HTTPException(status_code=400, detail="No fields to update")
 
     client = get_supabase()
     response = (
-        client.table("devices")
-        .update(
-            {
-                "crop_type": body.crop_type,
-                "lifecycle_stage": body.lifecycle_stage,
-            }
-        )
-        .eq("id", device_id)
-        .execute()
+        client.table("devices").update(patch).eq("id", device_id).execute()
     )
     rows = response.data or []
     if not rows:
@@ -154,22 +191,16 @@ def patch_device_profile(
         )
 
     updated = rows[0]
-    crop_type = str(updated.get("crop_type") or body.crop_type)
-    lifecycle_stage = str(
-        updated.get("lifecycle_stage") or body.lifecycle_stage
-    )
+    crop_type = str(updated.get("crop_type") or new_crop)
+    lifecycle_stage = str(updated.get("lifecycle_stage") or new_stage)
 
-    _insert_stage_change_event(
-        device_id=device_id,
-        old_crop=existing["crop_type"],
-        old_stage=existing["lifecycle_stage"],
-        new_crop=crop_type,
-        new_stage=lifecycle_stage,
-    )
+    if "crop_type" in patch or "lifecycle_stage" in patch:
+        _insert_stage_change_event(
+            device_id=device_id,
+            old_crop=str(existing["crop_type"]),
+            old_stage=str(existing["lifecycle_stage"]),
+            new_crop=crop_type,
+            new_stage=lifecycle_stage,
+        )
 
-    return DeviceResponse(
-        id=str(updated["id"]),
-        name=str(updated.get("name") or ""),
-        crop_type=crop_type,
-        lifecycle_stage=lifecycle_stage,
-    )
+    return _device_response(updated)

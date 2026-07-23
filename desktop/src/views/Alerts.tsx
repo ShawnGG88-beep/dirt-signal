@@ -2,19 +2,22 @@ import { useCallback, useEffect, useState } from "react";
 import {
   acknowledgeAlert,
   evaluateAlerts,
-  fetchAlertRules,
   fetchAlerts,
-  markAlertNotified,
   patchAlertRule,
   type AlertEvent,
   type AlertRule,
   type AlertRuleType,
   type AlertSeverity,
 } from "../lib/api";
-import { ensureNotificationPermission, notifyAlert } from "../lib/notifications";
+import { alertsToCsv, downloadCsv } from "../lib/csv";
+import { rangeFromPreset, type RangePreset } from "../lib/metrics";
+import { useAlertPoll } from "../lib/useAlertPoll";
+import { LogEventForm } from "../components/LogEventForm";
+import { RangePicker } from "../components/RangePicker";
+import type { PlantEventTypeKey } from "../lib/eventTypes";
 
 const DEVICE_NAME = "pi-garden-01";
-const POLL_MS = 30_000;
+const HIGH_FIRE_CAUTION = 14;
 
 const RULE_LABELS: Record<AlertRuleType, string> = {
   frost_risk: "Frost risk",
@@ -57,67 +60,85 @@ function modeLabel(rule: AlertRule): string {
   return "notify";
 }
 
+function eventTypeForAlert(alert: AlertEvent): PlantEventTypeKey {
+  if (
+    alert.rule_type === "irrigation_due" ||
+    alert.metric_key === "moisture_pct"
+  ) {
+    return "irrigation";
+  }
+  if (alert.rule_type === "disease_pressure") {
+    return "pest_disease_treatment";
+  }
+  return "observation";
+}
+
 export function Alerts() {
-  const [openAlerts, setOpenAlerts] = useState<AlertEvent[]>([]);
+  const {
+    openAlerts,
+    rules,
+    permissionDenied,
+    lastError,
+    refresh,
+    requestPermission,
+    setRules,
+  } = useAlertPoll();
+
   const [history, setHistory] = useState<AlertEvent[]>([]);
-  const [rules, setRules] = useState<AlertRule[]>([]);
+  const [historyRange, setHistoryRange] = useState<RangePreset>("30d");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [evalNote, setEvalNote] = useState<string | null>(null);
-  const [permissionOk, setPermissionOk] = useState<boolean | null>(null);
   const [ackDraft, setAckDraft] = useState<Record<string, string>>({});
+  const [prefillEvent, setPrefillEvent] = useState<{
+    type: PlantEventTypeKey;
+    note: string;
+  } | null>(null);
+  const [pendingLogOffer, setPendingLogOffer] = useState<{
+    type: PlantEventTypeKey;
+    note: string;
+  } | null>(null);
 
-  const load = useCallback(async () => {
+  const loadHistory = useCallback(async () => {
+    const { from, to } = rangeFromPreset(historyRange);
     try {
-      const [openRes, allRes, rulesRes] = await Promise.all([
-        fetchAlerts({ deviceName: DEVICE_NAME, status: "open" }),
-        fetchAlerts({ deviceName: DEVICE_NAME, status: "all", limit: 50 }),
-        fetchAlertRules(DEVICE_NAME),
-      ]);
-      setOpenAlerts(openRes.alerts);
+      const allRes = await fetchAlerts({
+        deviceName: DEVICE_NAME,
+        status: "all",
+        fromAt: from,
+        toAt: to,
+        limit: 500,
+      });
       setHistory(allRes.alerts);
-      setRules(rulesRes.rules);
       setError(null);
-
-      // Deliver OS notifications for promoted, unacknowledged, not-yet-notified
-      for (const alert of openRes.alerts) {
-        if (
-          alert.rule_notify &&
-          !alert.acknowledged_at &&
-          !alert.notified
-        ) {
-          const sent = await notifyAlert(alert);
-          if (sent) {
-            await markAlertNotified(alert.id);
-          }
-        }
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [historyRange]);
 
   useEffect(() => {
-    void load();
-    const id = window.setInterval(() => void load(), POLL_MS);
-    return () => window.clearInterval(id);
-  }, [load]);
+    void loadHistory();
+  }, [loadHistory]);
 
-  useEffect(() => {
-    void ensureNotificationPermission().then(setPermissionOk);
-  }, []);
-
-  async function onAcknowledge(alertId: string) {
+  async function onAcknowledge(alert: AlertEvent) {
+    const note = ackDraft[alert.id]?.trim() || null;
     try {
-      await acknowledgeAlert(alertId, ackDraft[alertId] ?? null);
+      await acknowledgeAlert(alert.id, note);
       setAckDraft((d) => {
         const next = { ...d };
-        delete next[alertId];
+        delete next[alert.id];
         return next;
       });
-      await load();
+      await refresh();
+      await loadHistory();
+      if (note) {
+        setPendingLogOffer({
+          type: eventTypeForAlert(alert),
+          note,
+        });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -125,17 +146,23 @@ export function Alerts() {
 
   async function onToggleEnabled(rule: AlertRule) {
     try {
-      await patchAlertRule(rule.id, { enabled: !rule.enabled });
-      await load();
+      const updated = await patchAlertRule(rule.id, { enabled: !rule.enabled });
+      setRules(rules.map((r) => (r.id === rule.id ? { ...r, ...updated } : r)));
+      await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   }
 
   async function onPromoteNotify(rule: AlertRule) {
+    const promoting = !rule.notify;
     try {
-      await patchAlertRule(rule.id, { notify: !rule.notify });
-      await load();
+      if (promoting) {
+        await requestPermission();
+      }
+      const updated = await patchAlertRule(rule.id, { notify: promoting });
+      setRules(rules.map((r) => (r.id === rule.id ? { ...r, ...updated } : r)));
+      await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -145,7 +172,7 @@ export function Alerts() {
     try {
       const until = new Date(Date.now() + hours * 3600_000).toISOString();
       await patchAlertRule(rule.id, { snoozed_until: until });
-      await load();
+      await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -154,7 +181,7 @@ export function Alerts() {
   async function onClearSnooze(rule: AlertRule) {
     try {
       await patchAlertRule(rule.id, { clear_snooze: true });
-      await load();
+      await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -166,11 +193,14 @@ export function Alerts() {
       setEvalNote(
         `Evaluated ${result.evaluated} checks · opened ${result.opened} · closed ${result.closed}`,
       );
-      await load();
+      await refresh();
+      await loadHistory();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   }
+
+  const { from: histFrom, to: histTo } = rangeFromPreset(historyRange);
 
   return (
     <section className="alerts-view">
@@ -183,7 +213,14 @@ export function Alerts() {
           <button type="button" className="btn-secondary" onClick={() => void onEvaluate()}>
             Evaluate now
           </button>
-          <button type="button" className="btn-secondary" onClick={() => void load()}>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => {
+              void refresh();
+              void loadHistory();
+            }}
+          >
             Refresh
           </button>
         </div>
@@ -198,17 +235,38 @@ export function Alerts() {
         or evaluation on the collector) is future work.
       </aside>
 
-      {permissionOk === false && (
-        <p className="alerts-permission-warn">
-          Desktop notification permission is not granted. Promoted rules will
-          still record firings; OS toasts will not appear until permission is
-          allowed.
-        </p>
+      {(error || lastError) && (
+        <p className="error-text">{error || lastError}</p>
       )}
-
-      {error && <p className="error-text">{error}</p>}
       {evalNote && <p className="alerts-eval-note">{evalNote}</p>}
       {loading && <p className="muted">Loading alerts…</p>}
+
+      {pendingLogOffer && (
+        <aside className="alerts-log-offer" role="dialog" aria-label="Log event offer">
+          <p>
+            Acknowledge note saved. Open a plant event prefilled with that note?
+          </p>
+          <div className="alerts-log-offer-actions">
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => {
+                setPrefillEvent(pendingLogOffer);
+                setPendingLogOffer(null);
+              }}
+            >
+              Open log form
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => setPendingLogOffer(null)}
+            >
+              Dismiss
+            </button>
+          </div>
+        </aside>
+      )}
 
       <section className="alerts-section">
         <h2>
@@ -258,7 +316,7 @@ export function Alerts() {
                   <button
                     type="button"
                     className="btn-secondary"
-                    onClick={() => void onAcknowledge(alert.id)}
+                    onClick={() => void onAcknowledge(alert)}
                   >
                     Acknowledge
                   </button>
@@ -280,70 +338,132 @@ export function Alerts() {
           approaching bound, which ships disabled. Promote notify only after
           watching firings against real sensor traces.
         </p>
+        {permissionDenied && (
+          <aside className="alerts-permission-warn" role="status">
+            Notification permission was denied. Promoted rules will still
+            record firings but produce no toasts.{" "}
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => void requestPermission()}
+            >
+              Re-request permission
+            </button>
+          </aside>
+        )}
         <ul className="alerts-rules">
-          {rules.map((rule) => (
-            <li key={rule.id} className="alerts-rule">
-              <div className="alerts-rule-head">
-                <strong>{RULE_LABELS[rule.rule_type]}</strong>
-                <span className={`alerts-mode alerts-mode-${modeLabel(rule)}`}>
-                  {modeLabel(rule)}
-                </span>
-              </div>
-              {RULE_NOTES[rule.rule_type] && (
-                <p className="muted alerts-rule-note">
-                  {RULE_NOTES[rule.rule_type]}
+          {rules.map((rule) => {
+            const fired7 = rule.fired_7d ?? 0;
+            const fired30 = rule.fired_30d ?? 0;
+            const highFire = fired7 > HIGH_FIRE_CAUTION;
+            return (
+              <li key={rule.id} className="alerts-rule">
+                <div className="alerts-rule-head">
+                  <strong>{RULE_LABELS[rule.rule_type]}</strong>
+                  <span className={`alerts-mode alerts-mode-${modeLabel(rule)}`}>
+                    {modeLabel(rule)}
+                  </span>
+                </div>
+                <p className="alerts-rule-firings">
+                  <span>
+                    {fired7} firings / 7d
+                  </span>
+                  <span className="muted">·</span>
+                  <span>
+                    {fired30} / 30d
+                  </span>
+                  <span className="muted">·</span>
+                  <span>
+                    last{" "}
+                    {rule.last_fired_at
+                      ? formatWhen(rule.last_fired_at)
+                      : "never"}
+                  </span>
                 </p>
-              )}
-              <div className="alerts-rule-actions">
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => void onToggleEnabled(rule)}
-                >
-                  {rule.enabled ? "Disable" : "Enable"}
-                </button>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => void onPromoteNotify(rule)}
-                  disabled={!rule.enabled}
-                  title={
-                    rule.notify
-                      ? "Return to shadow mode"
-                      : "Promote: send desktop notifications"
-                  }
-                >
-                  {rule.notify ? "Demote to shadow" : "Promote notify"}
-                </button>
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => void onSnooze(rule, 6)}
-                >
-                  Snooze 6h
-                </button>
-                {rule.snoozed_until && (
+                {RULE_NOTES[rule.rule_type] && (
+                  <p className="muted alerts-rule-note">
+                    {RULE_NOTES[rule.rule_type]}
+                  </p>
+                )}
+                <div className="alerts-rule-actions">
                   <button
                     type="button"
                     className="btn-secondary"
-                    onClick={() => void onClearSnooze(rule)}
+                    onClick={() => void onToggleEnabled(rule)}
                   >
-                    Clear snooze
+                    {rule.enabled ? "Disable" : "Enable"}
                   </button>
+                  <span className="alerts-promote-wrap">
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => void onPromoteNotify(rule)}
+                      disabled={!rule.enabled}
+                      title={
+                        rule.notify
+                          ? "Return to shadow mode"
+                          : "Promote: send desktop notifications"
+                      }
+                    >
+                      {rule.notify ? "Demote to shadow" : "Promote notify"}
+                    </button>
+                    {highFire && (
+                      <span className="alerts-fire-caution" title="More than twice daily">
+                        High recent firings — review before promoting
+                      </span>
+                    )}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => void onSnooze(rule, 6)}
+                  >
+                    Snooze 6h
+                  </button>
+                  {rule.snoozed_until && (
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => void onClearSnooze(rule)}
+                    >
+                      Clear snooze
+                    </button>
+                  )}
+                </div>
+                {rule.snoozed_until && (
+                  <p className="muted">
+                    Snoozed until {formatWhen(rule.snoozed_until)}
+                  </p>
                 )}
-              </div>
-              {rule.snoozed_until && (
-                <p className="muted">
-                  Snoozed until {formatWhen(rule.snoozed_until)}
-                </p>
-              )}
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       </section>
 
       <section className="alerts-section">
-        <h2>History</h2>
+        <div className="alerts-history-toolbar">
+          <h2>History</h2>
+          <div className="view-toolbar">
+            <RangePicker value={historyRange} onChange={setHistoryRange} />
+            <button
+              type="button"
+              className="export-btn"
+              disabled={history.length === 0}
+              onClick={() => {
+                const csv = alertsToCsv(history);
+                const fromTag = histFrom.toISOString().slice(0, 10);
+                const toTag = histTo.toISOString().slice(0, 10);
+                downloadCsv(
+                  `dirt-signal-alerts_${fromTag}_to_${toTag}.csv`,
+                  csv,
+                );
+              }}
+            >
+              Export CSV
+            </button>
+          </div>
+        </div>
         <ul className="alerts-list alerts-history">
           {history.map((alert) => (
             <li key={alert.id} className="alerts-item alerts-item-compact">
@@ -371,6 +491,16 @@ export function Alerts() {
           ))}
         </ul>
       </section>
+
+      {prefillEvent && (
+        <LogEventForm
+          deviceName={DEVICE_NAME}
+          initialEventType={prefillEvent.type}
+          initialNote={prefillEvent.note}
+          onClose={() => setPrefillEvent(null)}
+          onSaved={() => setPrefillEvent(null)}
+        />
+      )}
     </section>
   );
 }

@@ -36,6 +36,7 @@ from alerts.scoring import (
     score_reading_metric,
 )
 from constants import SAMPLING_LIMITATIONS, ScoringSemantic, get_scoring_semantic
+from day_night import default_device_timezone
 
 Severity = Literal["info", "warning", "critical"]
 
@@ -66,10 +67,15 @@ class EvalContext:
     max_gap_seconds: float
     collector_interval_seconds: float
     now: datetime
+    # IANA timezone for device-local day/night (never host/browser local).
+    timezone: str = ""
     # Optional extras used by specific rules
     events: list[dict[str, Any]] | None = None
     alert_is_open: bool = False
     open_metric_key: str | None = None
+
+    def tz(self) -> str:
+        return self.timezone or default_device_timezone()
 
 
 FROST_NOTE = (
@@ -146,7 +152,7 @@ def evaluate_frost_risk(ctx: EvalContext) -> RuleDecision:
         if temp is None:
             return None
         temp_f = float(temp)
-        if is_night_hour(at) and temp_f < threshold:
+        if is_night_hour(at, ctx.tz()) and temp_f < threshold:
             return True
         # Rate projection uses whole window; single-sample rate is handled below
         projected = _projects_below_zero(readings, at, horizon)
@@ -263,7 +269,7 @@ def _oob_for_metric(
         if reading is None:
             return None
         crop, stage = reading_profile(reading, ctx.crop_type, ctx.lifecycle_stage)
-        score = score_reading_metric(reading, key, crop, stage)
+        score = score_reading_metric(reading, key, crop, stage, ctx.tz())
         if score.status == "unknown":
             return None
         if restraint:
@@ -275,7 +281,7 @@ def _oob_for_metric(
         if reading is None:
             return None
         crop, stage = reading_profile(reading, ctx.crop_type, ctx.lifecycle_stage)
-        score = score_reading_metric(reading, key, crop, stage)
+        score = score_reading_metric(reading, key, crop, stage, ctx.tz())
         if score.status == "unknown" or score.bounds is None or point.value is None:
             return None
         clear_lo, clear_hi = deadband_bounds(
@@ -351,7 +357,7 @@ def _approach_for_metric(
         if reading is None:
             return None
         crop, stage = reading_profile(reading, ctx.crop_type, ctx.lifecycle_stage)
-        score = score_reading_metric(reading, key, crop, stage)
+        score = score_reading_metric(reading, key, crop, stage, ctx.tz())
         if score.status != "watch":
             return False if score.status != "unknown" else None
         if restraint and score.toward_bound != "high":
@@ -363,7 +369,7 @@ def _approach_for_metric(
         if reading is None:
             return None
         crop, stage = reading_profile(reading, ctx.crop_type, ctx.lifecycle_stage)
-        score = score_reading_metric(reading, key, crop, stage)
+        score = score_reading_metric(reading, key, crop, stage, ctx.tz())
         if score.status == "unknown":
             return None
         # Clear when no longer in watch (ok, or already out-of-band handled elsewhere)
@@ -411,7 +417,7 @@ def _trend_toward_bound(ctx: EvalContext, key: MetricKey, n: int) -> bool:
     toward: str | None = None
     for reading in window:
         crop, stage = reading_profile(reading, ctx.crop_type, ctx.lifecycle_stage)
-        score = score_reading_metric(reading, key, crop, stage)
+        score = score_reading_metric(reading, key, crop, stage, ctx.tz())
         raw = reading.get(key)
         if raw is None or score.toward_bound is None:
             return False

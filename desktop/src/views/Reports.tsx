@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  fetchDailyAggregates,
   fetchEvents,
   fetchReadingsRange,
   HISTORY_FETCH_LIMIT,
+  type DailyAggregateRow,
   type PlantEvent,
   type SensorReading,
 } from "../lib/api";
 import { buildDailySummaries } from "../lib/dailySummary";
+import { DEFAULT_DEVICE_TIMEZONE, localDayKey } from "../lib/dayNight";
 import {
   eventTypeColour,
   eventTypeGlyph,
@@ -29,6 +32,8 @@ import { ExportButton } from "../components/ExportButton";
 import { RangePicker } from "../components/RangePicker";
 
 const DEVICE_NAME = "pi-garden-01";
+const VPD_LIMITATION = SAMPLING_LIMITATIONS[3];
+const HUMIDITY_LIMITATION = SAMPLING_LIMITATIONS[4];
 
 interface ReportsProps {
   profileEpoch: number;
@@ -60,25 +65,37 @@ function formatRange(
   return `${lo} to ${hi}${suffix}`;
 }
 
-function localDayKey(iso: string): string {
-  const d = new Date(iso);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
 function groupEventsByDay(
   events: PlantEvent[],
+  timeZone: string,
 ): Map<string, PlantEvent[]> {
   const map = new Map<string, PlantEvent[]>();
   for (const event of events) {
-    const key = localDayKey(event.occurred_at);
+    const key = localDayKey(event.occurred_at, timeZone);
     const list = map.get(key) ?? [];
     list.push(event);
     map.set(key, list);
   }
   return map;
+}
+
+function summariseIrrigation(events: PlantEvent[]): {
+  count: number;
+  volumeMl: number | null;
+} {
+  const irrigations = events.filter((e) => e.event_type === "irrigation");
+  let volume = 0;
+  let hasVolume = false;
+  for (const event of irrigations) {
+    if (event.quantity != null) {
+      volume += event.quantity;
+      hasVolume = true;
+    }
+  }
+  return {
+    count: irrigations.length,
+    volumeMl: hasVolume ? volume : null,
+  };
 }
 
 export function Reports({
@@ -88,11 +105,20 @@ export function Reports({
   onRangeChange,
 }: ReportsProps) {
   const [readings, setReadings] = useState<SensorReading[]>([]);
+  const [dailyRows, setDailyRows] = useState<DailyAggregateRow[]>([]);
   const [events, setEvents] = useState<PlantEvent[]>([]);
   const [cropType, setCropType] = useState<string>(DEFAULT_CROP_TYPE);
   const [lifecycleStage, setLifecycleStage] = useState<string>(
     DEFAULT_LIFECYCLE_STAGE,
   );
+  const [timeZone, setTimeZone] = useState(DEFAULT_DEVICE_TIMEZONE);
+  const [seasonStartDate, setSeasonStartDate] = useState<string | null>(null);
+  const [cumulativeGdd, setCumulativeGdd] = useState<number | null>(null);
+  const [daysElapsed, setDaysElapsed] = useState<number | null>(null);
+  const [daysExcluded, setDaysExcluded] = useState(0);
+  const [gddUnavailableReason, setGddUnavailableReason] = useState<
+    string | null
+  >(null);
   const [from, setFrom] = useState(() => rangeFromPreset(preset).from);
   const [to, setTo] = useState(() => rangeFromPreset(preset).to);
   const [loading, setLoading] = useState(true);
@@ -107,34 +133,45 @@ export function Reports({
     async function load() {
       setLoading(true);
       try {
-        const [range, eventsResult] = await Promise.all([
-          fetchReadingsRange(
-            nextFrom,
-            nextTo,
-            DEVICE_NAME,
-            HISTORY_FETCH_LIMIT,
-          ),
+        const [aggregates, eventsResult, range] = await Promise.all([
+          fetchDailyAggregates(nextFrom, nextTo, DEVICE_NAME),
           fetchEvents({
             deviceName: DEVICE_NAME,
             fromAt: nextFrom,
             toAt: nextTo,
             limit: 2000,
           }),
+          fetchReadingsRange(
+            nextFrom,
+            nextTo,
+            DEVICE_NAME,
+            HISTORY_FETCH_LIMIT,
+          ),
         ]);
         if (!cancelled) {
-          setReadings(range.readings);
+          setDailyRows(aggregates.days);
           setEvents(eventsResult.events);
-          setCropType(range.crop_type ?? DEFAULT_CROP_TYPE);
+          setReadings(range.readings);
+          setCropType(aggregates.crop_type ?? DEFAULT_CROP_TYPE);
           setLifecycleStage(
-            range.lifecycle_stage ?? DEFAULT_LIFECYCLE_STAGE,
+            aggregates.lifecycle_stage ?? DEFAULT_LIFECYCLE_STAGE,
+          );
+          setTimeZone(aggregates.timezone ?? DEFAULT_DEVICE_TIMEZONE);
+          setSeasonStartDate(aggregates.season_start_date);
+          setCumulativeGdd(aggregates.cumulative_gdd);
+          setDaysElapsed(aggregates.days_elapsed);
+          setDaysExcluded(aggregates.days_excluded);
+          setGddUnavailableReason(
+            aggregates.cumulative_gdd_unavailable_reason,
           );
           setError(null);
         }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Failed to load report");
-          setReadings([]);
+          setDailyRows([]);
           setEvents([]);
+          setReadings([]);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -147,16 +184,39 @@ export function Reports({
     };
   }, [preset, profileEpoch, eventsEpoch]);
 
-  const summaries = useMemo(
-    () => buildDailySummaries(readings, { cropType, lifecycleStage }),
-    [readings, cropType, lifecycleStage],
+  const metricSummaries = useMemo(
+    () =>
+      buildDailySummaries(readings, {
+        cropType,
+        lifecycleStage,
+        timeZone,
+      }),
+    [readings, cropType, lifecycleStage, timeZone],
   );
 
-  const eventsByDay = useMemo(() => groupEventsByDay(events), [events]);
+  const summariesByDay = useMemo(
+    () => new Map(metricSummaries.map((s) => [s.day, s])),
+    [metricSummaries],
+  );
+
+  const eventsByDay = useMemo(
+    () => groupEventsByDay(events, timeZone),
+    [events, timeZone],
+  );
+
+  const irrigationSummary = useMemo(
+    () => summariseIrrigation(events),
+    [events],
+  );
 
   const scoringSemantic = getScoringSemantic(cropType, lifecycleStage);
   const stage = getCropStage(cropType, lifecycleStage);
   const showGrapeLimitations = isGrapeCrop(cropType);
+
+  const sortedDays = useMemo(
+    () => [...dailyRows].sort((a, b) => b.day.localeCompare(a.day)),
+    [dailyRows],
+  );
 
   return (
     <div className="view-page">
@@ -164,7 +224,7 @@ export function Reports({
         <div>
           <h1>Reports</h1>
           <p className="subtitle">
-            Daily digest · average and range per metric · flags against{" "}
+            Daily digest · device-local days ({timeZone}) · flags against{" "}
             {cropType}/{lifecycleStage} reference (
             {scoringSemantic === "restraint"
               ? "restraint scoring: elevated readings mean excess vigour risk"
@@ -187,19 +247,79 @@ export function Reports({
       {error && <div className="error-banner">{error}</div>}
       {loading && <p className="view-status">Loading…</p>}
 
-      {!loading && summaries.length === 0 && (
+      {!loading && sortedDays.length > 0 && (
+        <section className="reports-season-summary">
+          <h2>Season summary</h2>
+          <dl className="reports-season-dl">
+            <div>
+              <dt>Cumulative degree days</dt>
+              <dd>
+                {gddUnavailableReason === "no_season_start" ||
+                seasonStartDate == null ? (
+                  "Set season start in plant profile"
+                ) : cumulativeGdd != null ? (
+                  <>
+                    {cumulativeGdd.toFixed(1)} °C·d
+                    <span className="dashboard-gdd-note">
+                      {" "}
+                      (device degree days — not field GDD)
+                    </span>
+                  </>
+                ) : (
+                  "n/a"
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt>Season window</dt>
+              <dd>
+                {daysElapsed != null
+                  ? `${daysElapsed}d elapsed · ${daysExcluded}d excluded (sparse coverage)`
+                  : "n/a"}
+              </dd>
+            </div>
+            <div>
+              <dt>Irrigation</dt>
+              <dd>
+                {irrigationSummary.count} event
+                {irrigationSummary.count === 1 ? "" : "s"}
+                {irrigationSummary.volumeMl != null
+                  ? ` · ${irrigationSummary.volumeMl.toFixed(0)} ml total`
+                  : ""}
+              </dd>
+            </div>
+          </dl>
+        </section>
+      )}
+
+      {!loading && sortedDays.length === 0 && (
         <p className="view-status">No readings in this range</p>
       )}
 
-      {!loading && summaries.length > 0 && (
+      {!loading && sortedDays.length > 0 && (
         <div className="reports-list">
-          {summaries.map((summary) => {
-            const dayEvents = eventsByDay.get(summary.day) ?? [];
+          {sortedDays.map((row) => {
+            const summary = summariesByDay.get(row.day);
+            const dayEvents = eventsByDay.get(row.day) ?? [];
             return (
-              <section key={summary.day} className="report-day">
+              <section
+                key={row.day}
+                className={
+                  row.incomplete
+                    ? "report-day report-day-incomplete"
+                    : "report-day"
+                }
+              >
                 <div className="report-day-header">
-                  <h2>{formatDayLabel(summary.day)}</h2>
-                  {summary.hasFlags ? (
+                  <h2>
+                    {formatDayLabel(row.day)}
+                    {row.incomplete && (
+                      <span className="report-incomplete-badge">
+                        incomplete
+                      </span>
+                    )}
+                  </h2>
+                  {summary?.hasFlags ? (
                     scoringSemantic === "restraint" ? (
                       <span className="elevated-badge">elevated</span>
                     ) : (
@@ -213,6 +333,30 @@ export function Reports({
                     </span>
                   )}
                 </div>
+
+                <div className="report-derived-stats">
+                  <span>
+                    GDD{" "}
+                    {row.gdd_day != null
+                      ? `${row.gdd_day.toFixed(1)} °C·d`
+                      : "n/a"}
+                  </span>
+                  <span className="muted">·</span>
+                  <span title={HUMIDITY_LIMITATION}>
+                    High humidity{" "}
+                    {row.high_humidity_hours}h
+                    <span className="muted">
+                      {" "}
+                      (coverage {row.coverage_hours.toFixed(0)}h)
+                    </span>
+                  </span>
+                  <span className="muted">·</span>
+                  <span title={VPD_LIMITATION}>
+                    VPD mean{" "}
+                    {formatMetricValue(row.vpd_kpa_mean, "kPa", 2)}
+                  </span>
+                </div>
+
                 <div className="report-day-events">
                   <span className="report-day-events-label">Events</span>
                   {dayEvents.length === 0 ? (
@@ -237,63 +381,74 @@ export function Reports({
                     </span>
                   )}
                 </div>
-                <div className="table-scroll">
-                  <table className="report-table">
-                    <thead>
-                      <tr>
-                        <th>Metric</th>
-                        <th>Mean</th>
-                        <th>Range</th>
-                        <th>n</th>
-                        <th>Reference</th>
-                        <th>Flag</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {summary.metrics.map((m) => (
-                        <tr
-                          key={m.key}
-                          className={
-                            m.elevated
-                              ? "row-elevated"
-                              : m.outOfBounds
-                                ? "row-flagged"
-                                : undefined
-                          }
-                        >
-                          <td>{m.label}</td>
-                          <td>{formatMetricValue(m.mean, m.unit, 2)}</td>
-                          <td>{formatRange(m.min, m.max, m.unit)}</td>
-                          <td>{m.count}</td>
-                          <td className="ref-cell">{m.referenceLabel}</td>
-                          <td>
-                            {!m.flaggable ? (
-                              <span className="muted-cell">n/a</span>
-                            ) : m.elevated ? (
-                              <span
-                                className="elevated-dot"
-                                title="Elevated: excess vigour risk, not a deficiency"
-                              >
-                                ↑
-                              </span>
-                            ) : m.outOfBounds ? (
-                              <span className="flag-dot" title="Outside bounds">
-                                !
-                              </span>
-                            ) : (
-                              <span className="muted-cell">ok</span>
-                            )}
-                          </td>
+
+                {summary && (
+                  <div className="table-scroll">
+                    <table className="report-table">
+                      <thead>
+                        <tr>
+                          <th>Metric</th>
+                          <th>Mean</th>
+                          <th>Range</th>
+                          <th>n</th>
+                          <th>Reference</th>
+                          <th>Flag</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {summary.metrics.map((m) => (
+                          <tr
+                            key={m.key}
+                            className={
+                              m.elevated
+                                ? "row-elevated"
+                                : m.outOfBounds
+                                  ? "row-flagged"
+                                  : undefined
+                            }
+                          >
+                            <td>{m.label}</td>
+                            <td>{formatMetricValue(m.mean, m.unit, 2)}</td>
+                            <td>{formatRange(m.min, m.max, m.unit)}</td>
+                            <td>{m.count}</td>
+                            <td className="ref-cell">{m.referenceLabel}</td>
+                            <td>
+                              {!m.flaggable ? (
+                                <span className="muted-cell">n/a</span>
+                              ) : m.elevated ? (
+                                <span
+                                  className="elevated-dot"
+                                  title="Elevated: excess vigour risk, not a deficiency"
+                                >
+                                  ↑
+                                </span>
+                              ) : m.outOfBounds ? (
+                                <span className="flag-dot" title="Outside bounds">
+                                  !
+                                </span>
+                              ) : (
+                                <span className="muted-cell">ok</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </section>
             );
           })}
         </div>
       )}
+
+      <section className="reports-derived-caveats">
+        <h2>Derived metric caveats</h2>
+        <ul>
+          <li className="metric-caveat">{VPD_LIMITATION}</li>
+          <li className="metric-caveat">{HUMIDITY_LIMITATION}</li>
+        </ul>
+      </section>
 
       {showGrapeLimitations && (
         <section className="reports-limitations">
@@ -333,6 +488,9 @@ export function Reports({
           separately when the stage defines them. N/P/K estimates are shown
           without pass/fail until calibrated against soil-test ground truth.
           Events are annotation context only and do not affect scoring.
+          Degree-day totals use device-local calendar days from{" "}
+          <code>/readings/daily-aggregates</code> — indoor device degree days,
+          not Winkler or field GDD.
           {scoringSemantic === "restraint"
             ? " Under restraint, nitrogen advice never recommends an increase."
             : ""}

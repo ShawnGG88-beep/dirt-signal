@@ -26,6 +26,8 @@ export interface LatestReadingResponse {
   crop_type?: string;
   lifecycle_stage?: string;
   device_id?: string | null;
+  timezone?: string;
+  season_start_date?: string | null;
 }
 
 export interface ReadingsRangeResponse {
@@ -37,6 +39,8 @@ export interface ReadingsRangeResponse {
   crop_type?: string;
   lifecycle_stage?: string;
   device_id?: string | null;
+  timezone?: string;
+  season_start_date?: string | null;
 }
 
 export interface DeviceResponse {
@@ -44,6 +48,8 @@ export interface DeviceResponse {
   name: string;
   crop_type: string;
   lifecycle_stage: string;
+  timezone?: string;
+  season_start_date?: string | null;
 }
 
 export interface ProfileStageOption {
@@ -132,18 +138,19 @@ export async function fetchProfileOptions(
 
 export async function patchDeviceProfile(
   deviceId: string,
-  cropType: string,
-  lifecycleStage: string,
+  body: {
+    crop_type?: string;
+    lifecycle_stage?: string;
+    season_start_date?: string | null;
+    clear_season_start?: boolean;
+  },
 ): Promise<DeviceResponse> {
   return apiFetch<DeviceResponse>(
     `/devices/${encodeURIComponent(deviceId)}/profile`,
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        crop_type: cropType,
-        lifecycle_stage: lifecycleStage,
-      }),
+      body: JSON.stringify(body),
     },
   );
 }
@@ -320,12 +327,79 @@ export interface AlertRule {
   snoozed_until: string | null;
   created_at: string;
   updated_at: string;
+  fired_7d?: number;
+  fired_30d?: number;
+  last_fired_at?: string | null;
 }
 
 export interface AlertRulesListResponse {
   device_name: string;
   rules: AlertRule[];
   count: number;
+}
+
+export interface DailyAggregateRow {
+  day: string;
+  sample_count: number;
+  coverage_hours: number;
+  moisture_pct_min: number | null;
+  moisture_pct_max: number | null;
+  moisture_pct_mean: number | null;
+  moisture_pct_count: number;
+  ph_min: number | null;
+  ph_max: number | null;
+  ph_mean: number | null;
+  ph_count: number;
+  soil_temp_c_min: number | null;
+  soil_temp_c_max: number | null;
+  soil_temp_c_mean: number | null;
+  soil_temp_c_count: number;
+  ambient_temp_c_min: number | null;
+  ambient_temp_c_max: number | null;
+  ambient_temp_c_mean: number | null;
+  ambient_temp_c_count: number;
+  ambient_humidity_pct_min: number | null;
+  ambient_humidity_pct_max: number | null;
+  ambient_humidity_pct_mean: number | null;
+  ambient_humidity_pct_count: number;
+  vpd_kpa_mean: number | null;
+  vpd_kpa_count: number;
+  gdd_day: number | null;
+  high_humidity_hours: number;
+  incomplete: boolean;
+}
+
+export interface DailyAggregatesResponse {
+  device_name: string;
+  device_id: string;
+  timezone: string;
+  season_start_date: string | null;
+  crop_type: string;
+  lifecycle_stage: string;
+  gdd_base_c: number;
+  from_at: string;
+  to_at: string;
+  days: DailyAggregateRow[];
+  count: number;
+  cumulative_gdd: number | null;
+  days_elapsed: number | null;
+  days_excluded: number;
+  cumulative_gdd_unavailable_reason: string | null;
+}
+
+export async function fetchDailyAggregates(
+  fromAt: Date,
+  toAt: Date,
+  deviceName = "pi-garden-01",
+): Promise<DailyAggregatesResponse> {
+  const params = new URLSearchParams({
+    device_name: deviceName,
+    from_at: fromAt.toISOString(),
+    to_at: toAt.toISOString(),
+  });
+  return apiFetch<DailyAggregatesResponse>(
+    `/readings/daily-aggregates?${params}`,
+  );
 }
 
 export interface AlertEvaluateResponse {

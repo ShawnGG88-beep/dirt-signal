@@ -1,6 +1,6 @@
-import type { PlantEvent, SensorReading } from "./api";
+import type { AlertEvent, PlantEvent, SensorReading } from "./api";
 import { eventTypeLabel } from "./eventTypes";
-import { METRICS } from "./metrics";
+import { METRICS, readingMetricValue } from "./metrics";
 
 const CSV_COLUMNS = ["recorded_at", ...METRICS.map((m) => m.key)] as const;
 
@@ -15,7 +15,7 @@ const EVENT_CSV_COLUMNS = [
   "lifecycle_stage_at_event",
 ] as const;
 
-function escapeCell(value: string | number | null | undefined): string {
+function escapeCell(value: string | number | boolean | null | undefined): string {
   if (value === null || value === undefined) return "";
   const text = String(value);
   if (text.includes(",") || text.includes('"') || text.includes("\n")) {
@@ -29,7 +29,7 @@ export function readingsToCsv(readings: SensorReading[]): string {
   const rows = readings.map((reading) =>
     CSV_COLUMNS.map((col) => {
       if (col === "recorded_at") return escapeCell(reading.recorded_at);
-      return escapeCell(reading[col]);
+      return escapeCell(readingMetricValue(reading, col));
     }).join(","),
   );
   return [header, ...rows].join("\n");
@@ -78,6 +78,27 @@ export function downloadCsv(filename: string, csv: string): void {
   anchor.download = filename;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+const ALERT_CSV_COLUMNS = [
+  "opened_at",
+  "closed_at",
+  "severity",
+  "rule_type",
+  "metric_key",
+  "trigger_value",
+  "message",
+  "notified",
+  "acknowledged_at",
+  "ack_note",
+] as const;
+
+export function alertsToCsv(alerts: AlertEvent[]): string {
+  const header = ALERT_CSV_COLUMNS.join(",");
+  const rows = alerts.map((alert) =>
+    ALERT_CSV_COLUMNS.map((col) => escapeCell(alert[col])).join(","),
+  );
+  return [header, ...rows].join("\n");
 }
 
 export function exportReadingsCsv(

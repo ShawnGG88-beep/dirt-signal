@@ -24,6 +24,8 @@ export const SAMPLING_LIMITATIONS: string[] = [
   "All three source studies used composite sampling. Zhao et al. took five positions per vineyard in an S pattern with five duplicates. Rosen recommends 15 to 20 cores per sample in a zig-zag pattern and calls sampling the weakest link in a soil testing programme. Gonzalez-Maldonado et al. found tractor rows and vine rows differ significantly. Dirt Signal reads a single fixed point. It measures that point, not the plot.",
   "Rosen recommends soil testing before planting and every 4 to 5 years thereafter, supplemented by petiole analysis once vines are established. Continuous sensor data is a different instrument answering a different question, and is not a substitute for either.",
   "None of the three sources is South African. Shanghai is subtropical humid monsoon, Napa is semi-arid Mediterranean, Minnesota and Michigan are cool continental. Local validation is required before any Cape Winelands claim.",
+  "Air VPD assumes leaf temperature equals air temperature. That assumption is weakest under artificial lighting and still air — both of which describe the current indoor setup. Displayed VPD is air VPD, not leaf-to-air VPD.",
+  "The sensor stack cannot measure leaf wetness, canopy humidity, or rainfall. Ambient relative humidity at probe height is a weak substitute for all three. High-humidity hours are a proxy for leaf wetness duration, never leaf wetness itself and never a disease risk score.",
 ];
 
 export interface TomatoMatureStage {
@@ -116,14 +118,16 @@ const TOMATO_MATURE: TomatoMatureStage = {
  */
 export const CROP_PROFILES: Record<
   string,
-  { stages: Record<string, CropStageBase> }
+  { gdd_base_c?: number; stages: Record<string, CropStageBase> }
 > = {
   tomato: {
+    gdd_base_c: 10,
     stages: {
       mature: TOMATO_MATURE,
     },
   },
   grape_wine: {
+    gdd_base_c: 10,
     stages: {
       // Zhao et al. 2019: no significant variety differences in soil OM /
       // available nutrients; split by production goal and stage only.
@@ -152,6 +156,7 @@ export const CROP_PROFILES: Record<
     },
   },
   grape_table: {
+    gdd_base_c: 10,
     stages: {
       mature: {
         scoring_semantic: "optimal_band",
@@ -172,6 +177,12 @@ export function getCropStage(
     return CROP_PROFILES[DEFAULT_CROP_TYPE].stages[DEFAULT_LIFECYCLE_STAGE];
   }
   return stage;
+}
+
+/** Single-triangle GDD base temperature (°C) for a crop profile. */
+export function getGddBaseC(cropType?: string | null): number {
+  const crop = CROP_PROFILES[cropType ?? DEFAULT_CROP_TYPE];
+  return crop?.gdd_base_c ?? CROP_PROFILES[DEFAULT_CROP_TYPE].gdd_base_c ?? 10;
 }
 
 export function getScoringSemantic(

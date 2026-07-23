@@ -1,12 +1,12 @@
 import type { SensorReading } from "./api";
 import {
+  CROP_PROFILES,
+  DEFAULT_CROP_TYPE,
+  DEFAULT_LIFECYCLE_STAGE,
   AMBIENT_TEMP_DAY_MAX_C,
   AMBIENT_TEMP_DAY_MIN_C,
   AMBIENT_TEMP_NIGHT_MAX_C,
   AMBIENT_TEMP_NIGHT_MIN_C,
-  CROP_PROFILES,
-  DEFAULT_CROP_TYPE,
-  DEFAULT_LIFECYCLE_STAGE,
   HUMIDITY_MAX_PCT,
   HUMIDITY_MIN_PCT,
   MOISTURE_MAX_PCT,
@@ -17,6 +17,11 @@ import {
   SOIL_TEMP_IDEAL_MIN_C,
   type ScoringSemantic,
 } from "./growingConstants";
+import {
+  DEFAULT_DEVICE_TIMEZONE,
+  isDayPeriod,
+} from "./dayNight";
+import { dewPointC, vapourPressureDeficitKpa } from "./derived";
 
 export type MetricKey =
   | "moisture_pct"
@@ -24,7 +29,9 @@ export type MetricKey =
   | "soil_temp_c"
   | "ambient_temp_c"
   | "ambient_humidity_pct"
-  | "moisture_raw";
+  | "moisture_raw"
+  | "vpd_kpa"
+  | "dew_point_c";
 
 export type MetricTier = "primary" | "context" | "diagnostic";
 
@@ -44,6 +51,8 @@ export interface MetricDef {
    * Prefer getMetricBoundsForProfile for profile-aware UI.
    */
   bounds: MetricBounds | null;
+  /** When true, value is computed client-side; never scored against bands. */
+  derived?: boolean;
 }
 
 /**
@@ -103,6 +112,24 @@ export const METRICS: MetricDef[] = [
     bounds: METRIC_BOUNDS.ambient_humidity_pct ?? null,
   },
   {
+    key: "vpd_kpa",
+    label: "VPD",
+    unit: "kPa",
+    colour: "#6B5B95",
+    tier: "context",
+    bounds: null,
+    derived: true,
+  },
+  {
+    key: "dew_point_c",
+    label: "Dew point",
+    unit: "°C",
+    colour: "#5B8FA8",
+    tier: "context",
+    bounds: null,
+    derived: true,
+  },
+  {
     key: "moisture_raw",
     label: "Raw ADC",
     unit: "",
@@ -131,7 +158,7 @@ export function getMetricBoundsForProfile(
   cropType?: string | null,
   lifecycleStage?: string | null,
 ): MetricBounds | null {
-  if (key === "moisture_raw" || key === "ambient_temp_c") {
+  if (key === "moisture_raw" || key === "ambient_temp_c" || key === "vpd_kpa" || key === "dew_point_c") {
     return null;
   }
 
@@ -188,11 +215,14 @@ export function getMetricBoundsForProfile(
 /**
  * Ambient day/night bounds only when the stage defines them (tomato mature).
  * Otherwise null: show raw value with no coloured band.
+ *
+ * `timeZone` is the device IANA timezone — never browser local.
  */
 export function getAmbientBoundsForProfile(
   recordedAt: string,
   cropType?: string | null,
   lifecycleStage?: string | null,
+  timeZone: string = DEFAULT_DEVICE_TIMEZONE,
 ): MetricBounds | null {
   const cropKey = cropType ?? DEFAULT_CROP_TYPE;
   const stageKey = lifecycleStage ?? DEFAULT_LIFECYCLE_STAGE;
@@ -212,16 +242,14 @@ export function getAmbientBoundsForProfile(
       cropKey === DEFAULT_CROP_TYPE &&
       stageKey === DEFAULT_LIFECYCLE_STAGE
     ) {
-      const hour = new Date(recordedAt).getHours();
-      const isDay = hour >= 6 && hour < 18;
+      const isDay = isDayPeriod(recordedAt, timeZone);
       return isDay
         ? { min: AMBIENT_TEMP_DAY_MIN_C, max: AMBIENT_TEMP_DAY_MAX_C }
         : { min: AMBIENT_TEMP_NIGHT_MIN_C, max: AMBIENT_TEMP_NIGHT_MAX_C };
     }
     return null;
   }
-  const hour = new Date(recordedAt).getHours();
-  const isDay = hour >= 6 && hour < 18;
+  const isDay = isDayPeriod(recordedAt, timeZone);
   return isDay
     ? {
         min: stage.ambient_temp_day_min_c,
@@ -307,13 +335,35 @@ export function scoreMetricValue(
   return { status: "ok", bounds, position };
 }
 
+/** Resolve a metric value from a reading, including derived metrics. */
+export function readingMetricValue(
+  reading: SensorReading,
+  key: MetricKey,
+): number | null {
+  if (key === "vpd_kpa") {
+    return vapourPressureDeficitKpa(
+      reading.ambient_temp_c,
+      reading.ambient_humidity_pct,
+    );
+  }
+  if (key === "dew_point_c") {
+    return dewPointC(reading.ambient_temp_c, reading.ambient_humidity_pct);
+  }
+  const v = reading[key as keyof SensorReading];
+  return typeof v === "number" ? v : null;
+}
+
 export function extractMetricValues(
   readings: SensorReading[],
   key: MetricKey,
 ): number[] {
   return readings
-    .map((r) => r[key])
-    .filter((v): v is number => v !== null && v !== undefined);
+    .map((r) => readingMetricValue(r, key))
+    .filter((v): v is number => v !== null);
+}
+
+export function isDerivedMetric(key: MetricKey): boolean {
+  return key === "vpd_kpa" || key === "dew_point_c";
 }
 
 export function formatMetricValue(
@@ -381,6 +431,8 @@ export const METRIC_SLUG: Record<MetricKey, string> = {
   ambient_temp_c: "ambient_temp",
   ambient_humidity_pct: "humidity",
   moisture_raw: "moisture_raw",
+  vpd_kpa: "vpd",
+  dew_point_c: "dew_point",
 };
 
 const SLUG_TO_METRIC: Record<string, MetricKey> = {
@@ -395,6 +447,10 @@ const SLUG_TO_METRIC: Record<string, MetricKey> = {
   ambient_humidity_pct: "ambient_humidity_pct",
   moisture_raw: "moisture_raw",
   raw: "moisture_raw",
+  vpd: "vpd_kpa",
+  vpd_kpa: "vpd_kpa",
+  dew_point: "dew_point_c",
+  dew_point_c: "dew_point_c",
 };
 
 export function metricKeyFromSlug(slug: string): MetricKey | null {

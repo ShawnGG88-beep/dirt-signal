@@ -1,0 +1,66 @@
+[
+  {
+    "id": "insufficient_samples",
+    "now": "2026-07-23T18:00:00Z",
+    "moisture_lower_bound": 25.0,
+    "events": [
+      { "event_type": "irrigation", "occurred_at": "2026-07-23T06:00:00Z" }
+    ],
+    "readings": [
+      { "recorded_at": "2026-07-23T08:00:00Z", "moisture_pct": 50 },
+      { "recorded_at": "2026-07-23T10:00:00Z", "moisture_pct": 45 },
+      { "recorded_at": "2026-07-23T12:00:00Z", "moisture_pct": 40 }
+    ],
+    "expect_suppressed_reason": "insufficient_samples",
+    "expect_hours_to_bound": null
+  },
+  {
+    "id": "no_irrigation",
+    "now": "2026-07-23T18:00:00Z",
+    "moisture_lower_bound": 25.0,
+    "events": [],
+    "readings": [
+      { "recorded_at": "2026-07-23T08:00:00Z", "moisture_pct": 50 },
+      { "recorded_at": "2026-07-23T10:00:00Z", "moisture_pct": 45 },
+      { "recorded_at": "2026-07-23T12:00:00Z", "moisture_pct": 40 },
+      { "recorded_at": "2026-07-23T14:00:00Z", "moisture_pct": 35 }
+    ],
+    "expect_suppressed_reason": "missing_irrigation_event",
+    "expect_hours_to_bound": null
+  },
+  {
+    "id": "clean_linear_drydown",
+    "now": "2026-07-23T14:00:00Z",
+    "moisture_lower_bound": 25.0,
+    "events": [
+      { "event_type": "irrigation", "occurred_at": "2026-07-23T06:00:00Z" }
+    ],
+    "readings": [
+      { "recorded_at": "2026-07-23T06:00:00Z", "moisture_pct": 55 },
+      { "recorded_at": "2026-07-23T08:00:00Z", "moisture_pct": 50 },
+      { "recorded_at": "2026-07-23T10:00:00Z", "moisture_pct": 45 },
+      { "recorded_at": "2026-07-23T12:00:00Z", "moisture_pct": 40 },
+      { "recorded_at": "2026-07-23T14:00:00Z", "moisture_pct": 35 }
+    ],
+    "expect_suppressed_reason": null,
+    "expect_hours_to_bound": 4.0
+  },
+  {
+    "id": "sensor_maintenance_suppresses",
+    "now": "2026-07-23T14:00:00Z",
+    "moisture_lower_bound": 25.0,
+    "events": [
+      { "event_type": "irrigation", "occurred_at": "2026-07-23T06:00:00Z" },
+      { "event_type": "sensor_maintenance", "occurred_at": "2026-07-23T09:00:00Z" }
+    ],
+    "readings": [
+      { "recorded_at": "2026-07-23T06:00:00Z", "moisture_pct": 55 },
+      { "recorded_at": "2026-07-23T08:00:00Z", "moisture_pct": 50 },
+      { "recorded_at": "2026-07-23T10:00:00Z", "moisture_pct": 45 },
+      { "recorded_at": "2026-07-23T12:00:00Z", "moisture_pct": 40 },
+      { "recorded_at": "2026-07-23T14:00:00Z", "moisture_pct": 35 }
+    ],
+    "expect_suppressed_reason": "sensor_maintenance_in_segment",
+    "expect_hours_to_bound": null
+  }
+]

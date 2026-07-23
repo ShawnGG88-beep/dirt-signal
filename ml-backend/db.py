@@ -27,18 +27,25 @@ def get_supabase() -> Client:
     return _client
 
 
-def _device_from_row(row: dict) -> dict[str, str]:
-    """Normalise a devices row; default crop/stage when columns are absent."""
+def _device_from_row(row: dict) -> dict[str, str | None]:
+    """Normalise a devices row; default crop/stage/timezone when absent."""
+    from day_night import default_device_timezone
+
+    tz = row.get("timezone")
+    tz_str = str(tz).strip() if tz else ""
+    season = row.get("season_start_date")
     return {
         "id": str(row["id"]),
         "name": str(row.get("name") or ""),
         "crop_type": str(row.get("crop_type") or "tomato"),
         "lifecycle_stage": str(row.get("lifecycle_stage") or "mature"),
+        "timezone": tz_str or default_device_timezone(),
+        "season_start_date": str(season) if season else None,
     }
 
 
-def resolve_device(device_name: str) -> dict[str, str]:
-    """Return id, name, crop_type, and lifecycle_stage for a named device."""
+def resolve_device(device_name: str) -> dict[str, str | None]:
+    """Return id, name, crop_type, lifecycle_stage, timezone, season_start_date."""
     client = get_supabase()
     response = (
         client.table("devices")
@@ -53,8 +60,8 @@ def resolve_device(device_name: str) -> dict[str, str]:
     return _device_from_row(rows[0])
 
 
-def resolve_device_by_id(device_id: str) -> dict[str, str]:
-    """Return id, name, crop_type, and lifecycle_stage for a device UUID."""
+def resolve_device_by_id(device_id: str) -> dict[str, str | None]:
+    """Return id, name, crop_type, lifecycle_stage, timezone, season_start_date."""
     client = get_supabase()
     response = (
         client.table("devices")

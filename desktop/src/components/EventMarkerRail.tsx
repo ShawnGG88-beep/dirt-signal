@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { PlantEvent } from "../lib/api";
+import type { AlertEvent, PlantEvent } from "../lib/api";
 import {
   eventTypeColour,
   eventTypeGlyph,
@@ -11,19 +11,27 @@ import { EventDetailPopover } from "./EventDetailPopover";
 
 const CLUSTER_PX = 12;
 
+export const ALERT_FILTER_KEY = "alert_open" as const;
+
 interface EventMarkerRailProps {
   events: PlantEvent[];
+  alerts?: AlertEvent[];
   fromAt: Date;
   toAt: Date;
   enabledTypes: Set<PlantEventTypeKey>;
+  showAlerts?: boolean;
   onEventsChanged: () => void;
   compact?: boolean;
 }
 
+type RailItem =
+  | { kind: "event"; at: string; event: PlantEvent }
+  | { kind: "alert"; at: string; alert: AlertEvent };
+
 interface MarkerCluster {
   id: string;
   xPct: number;
-  events: PlantEvent[];
+  items: RailItem[];
 }
 
 function timeToPct(iso: string, fromMs: number, spanMs: number): number {
@@ -33,55 +41,67 @@ function timeToPct(iso: string, fromMs: number, spanMs: number): number {
   return Math.min(100, Math.max(0, pct));
 }
 
-function clusterEvents(
-  events: PlantEvent[],
+function severityColour(severity: string): string {
+  if (severity === "critical") return "#ff4444";
+  if (severity === "warning") return "#FF8A00";
+  return "#107EEC";
+}
+
+function formatWhen(iso: string): string {
+  return new Date(iso).toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function clusterItems(
+  items: RailItem[],
   fromMs: number,
   spanMs: number,
   railWidthPx: number,
 ): MarkerCluster[] {
-  if (events.length === 0) return [];
-  const sorted = [...events].sort(
-    (a, b) =>
-      new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime(),
+  if (items.length === 0) return [];
+  const sorted = [...items].sort(
+    (a, b) => new Date(a.at).getTime() - new Date(b.at).getTime(),
   );
   const clusters: MarkerCluster[] = [];
-  let bucket: PlantEvent[] = [];
+  let bucket: RailItem[] = [];
   let bucketCentrePx = 0;
 
   const flush = () => {
     if (bucket.length === 0) return;
     const avgPct =
-      bucket.reduce(
-        (sum, e) => sum + timeToPct(e.occurred_at, fromMs, spanMs),
-        0,
-      ) / bucket.length;
+      bucket.reduce((sum, e) => sum + timeToPct(e.at, fromMs, spanMs), 0) /
+      bucket.length;
     clusters.push({
-      id: bucket.map((e) => e.id).join("|"),
+      id: bucket
+        .map((e) => (e.kind === "event" ? e.event.id : `a:${e.alert.id}`))
+        .join("|"),
       xPct: avgPct,
-      events: bucket,
+      items: bucket,
     });
     bucket = [];
   };
 
-  for (const event of sorted) {
-    const xPct = timeToPct(event.occurred_at, fromMs, spanMs);
+  for (const item of sorted) {
+    const xPct = timeToPct(item.at, fromMs, spanMs);
     const xPx = (xPct / 100) * railWidthPx;
     if (bucket.length === 0) {
-      bucket = [event];
+      bucket = [item];
       bucketCentrePx = xPx;
       continue;
     }
     if (Math.abs(xPx - bucketCentrePx) <= CLUSTER_PX) {
-      bucket.push(event);
+      bucket.push(item);
       bucketCentrePx =
         bucket.reduce((sum, e) => {
-          return (
-            sum + (timeToPct(e.occurred_at, fromMs, spanMs) / 100) * railWidthPx
-          );
+          return sum + (timeToPct(e.at, fromMs, spanMs) / 100) * railWidthPx;
         }, 0) / bucket.length;
     } else {
       flush();
-      bucket = [event];
+      bucket = [item];
       bucketCentrePx = xPx;
     }
   }
@@ -91,9 +111,11 @@ function clusterEvents(
 
 export function EventMarkerRail({
   events,
+  alerts = [],
   fromAt,
   toAt,
   enabledTypes,
+  showAlerts = true,
   onEventsChanged,
   compact = false,
 }: EventMarkerRailProps) {
@@ -103,6 +125,7 @@ export function EventMarkerRail({
     cluster: MarkerCluster;
     anchorPct: number;
   } | null>(null);
+  const [editingEvent, setEditingEvent] = useState<PlantEvent | null>(null);
 
   useEffect(() => {
     const el = trackRef.current;
@@ -121,38 +144,50 @@ export function EventMarkerRail({
   const toMs = toAt.getTime();
   const spanMs = Math.max(1, toMs - fromMs);
 
-  const filtered = useMemo(
-    () =>
-      events.filter((e) =>
-        enabledTypes.has(e.event_type as PlantEventTypeKey),
-      ),
-    [events, enabledTypes],
-  );
+  const items = useMemo(() => {
+    const out: RailItem[] = events
+      .filter((e) => enabledTypes.has(e.event_type as PlantEventTypeKey))
+      .map((event) => ({ kind: "event" as const, at: event.occurred_at, event }));
+    if (showAlerts) {
+      for (const alert of alerts) {
+        out.push({ kind: "alert", at: alert.opened_at, alert });
+      }
+    }
+    return out;
+  }, [events, alerts, enabledTypes, showAlerts]);
 
   const clusters = useMemo(
-    () => clusterEvents(filtered, fromMs, spanMs, railWidth),
-    [filtered, fromMs, spanMs, railWidth],
+    () => clusterItems(items, fromMs, spanMs, railWidth),
+    [items, fromMs, spanMs, railWidth],
   );
 
   return (
     <div className={compact ? "event-rail event-rail-compact" : "event-rail"}>
       <div className="event-rail-track" ref={trackRef}>
         {clusters.map((cluster) => {
-          const single = cluster.events.length === 1 ? cluster.events[0] : null;
-          const colour = single
-            ? eventTypeColour(single.event_type)
-            : "#c0c0c0";
-          const label = single
-            ? eventTypeLabel(single.event_type)
-            : `${cluster.events.length} events`;
+          const single = cluster.items.length === 1 ? cluster.items[0] : null;
+          let colour = "#c0c0c0";
+          let label = `${cluster.items.length} markers`;
+          let glyph = String(cluster.items.length);
+          let extraClass = "";
+          if (single?.kind === "event") {
+            colour = eventTypeColour(single.event.event_type);
+            label = eventTypeLabel(single.event.event_type);
+            glyph = eventTypeGlyph(single.event.event_type);
+          } else if (single?.kind === "alert") {
+            colour = severityColour(single.alert.severity);
+            label = `Alert · ${single.alert.severity}`;
+            glyph = "!";
+            extraClass = " event-rail-marker-alert";
+          }
           return (
             <button
               key={cluster.id}
               type="button"
               className={
-                single
+                (single
                   ? "event-rail-marker"
-                  : "event-rail-marker event-rail-cluster"
+                  : "event-rail-marker event-rail-cluster") + extraClass
               }
               style={{
                 left: `${cluster.xPct}%`,
@@ -166,24 +201,94 @@ export function EventMarkerRail({
                 setActive({ cluster, anchorPct: cluster.xPct });
               }}
             >
-              {single ? (
-                <span aria-hidden="true">
-                  {eventTypeGlyph(single.event_type)}
-                </span>
-              ) : (
-                <span aria-hidden="true">{cluster.events.length}</span>
-              )}
+              <span aria-hidden="true">{glyph}</span>
             </button>
           );
         })}
       </div>
 
-      {active && (
+      {active && !editingEvent && (() => {
+        const plantEvents = active.cluster.items
+          .filter((i): i is Extract<RailItem, { kind: "event" }> => i.kind === "event")
+          .map((i) => i.event);
+        const alertItems = active.cluster.items.filter(
+          (i): i is Extract<RailItem, { kind: "alert" }> => i.kind === "alert",
+        );
+        if (plantEvents.length > 0 && alertItems.length === 0) {
+          return (
+            <EventDetailPopover
+              events={plantEvents}
+              anchorPct={active.anchorPct}
+              onClose={() => setActive(null)}
+              onChanged={() => {
+                setActive(null);
+                onEventsChanged();
+              }}
+            />
+          );
+        }
+        const left = Math.min(92, Math.max(8, active.anchorPct));
+        return (
+          <div
+            className="event-popover"
+            style={{ left: `${left}%` }}
+            role="dialog"
+            aria-label="Marker detail"
+          >
+            <button
+              type="button"
+              className="event-popover-close"
+              onClick={() => setActive(null)}
+              aria-label="Close"
+            >
+              ×
+            </button>
+            <ul className="event-popover-list">
+              {alertItems.map(({ alert }) => (
+                <li key={alert.id} className="event-popover-alert">
+                  <span
+                    className="event-popover-type"
+                    style={{ color: severityColour(alert.severity) }}
+                  >
+                    Alert · {alert.severity}
+                  </span>
+                  <span className="event-popover-when">
+                    {formatWhen(alert.opened_at)}
+                  </span>
+                  <span className="event-popover-note">{alert.message}</span>
+                </li>
+              ))}
+              {plantEvents.map((event) => (
+                <li key={event.id}>
+                  <button
+                    type="button"
+                    className="event-popover-item"
+                    onClick={() => setEditingEvent(event)}
+                  >
+                    <span className="event-popover-type">
+                      {eventTypeLabel(event.event_type)}
+                    </span>
+                    <span className="event-popover-when">
+                      {formatWhen(event.occurred_at)}
+                    </span>
+                    {event.note && (
+                      <span className="event-popover-note">{event.note}</span>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })()}
+
+      {editingEvent && active && (
         <EventDetailPopover
-          events={active.cluster.events}
+          events={[editingEvent]}
           anchorPct={active.anchorPct}
-          onClose={() => setActive(null)}
+          onClose={() => setEditingEvent(null)}
           onChanged={() => {
+            setEditingEvent(null);
             setActive(null);
             onEventsChanged();
           }}
@@ -196,9 +301,16 @@ export function EventMarkerRail({
 interface EventTypeFilterProps {
   enabled: Set<PlantEventTypeKey>;
   onChange: (next: Set<PlantEventTypeKey>) => void;
+  showAlerts?: boolean;
+  onShowAlertsChange?: (show: boolean) => void;
 }
 
-export function EventTypeFilter({ enabled, onChange }: EventTypeFilterProps) {
+export function EventTypeFilter({
+  enabled,
+  onChange,
+  showAlerts = true,
+  onShowAlertsChange,
+}: EventTypeFilterProps) {
   function toggle(key: PlantEventTypeKey) {
     const next = new Set(enabled);
     if (next.has(key)) next.delete(key);
@@ -233,6 +345,23 @@ export function EventTypeFilter({ enabled, onChange }: EventTypeFilterProps) {
           </button>
         );
       })}
+      {onShowAlertsChange && (
+        <button
+          type="button"
+          className={
+            showAlerts
+              ? "event-filter-chip event-filter-chip-on"
+              : "event-filter-chip"
+          }
+          style={{ ["--event-colour" as string]: "#ff4444" }}
+          aria-pressed={showAlerts}
+          title="Alert openings"
+          onClick={() => onShowAlertsChange(!showAlerts)}
+        >
+          <span aria-hidden="true">!</span>
+          <span className="event-filter-chip-label">Alerts</span>
+        </button>
+      )}
     </div>
   );
 }

@@ -10,6 +10,9 @@ interface LogEventFormProps {
   deviceName?: string;
   onClose: () => void;
   onSaved: (event: PlantEvent) => void;
+  initialEventType?: PlantEventTypeKey;
+  initialNote?: string;
+  initialOccurredAt?: string;
 }
 
 function toDatetimeLocalValue(date: Date): string {
@@ -29,14 +32,21 @@ export function LogEventForm({
   deviceName = "pi-garden-01",
   onClose,
   onSaved,
+  initialEventType,
+  initialNote,
+  initialOccurredAt,
 }: LogEventFormProps) {
-  const [eventType, setEventType] = useState<PlantEventTypeKey>("irrigation");
+  const [eventType, setEventType] = useState<PlantEventTypeKey>(
+    initialEventType ?? "irrigation",
+  );
   const [occurredLocal, setOccurredLocal] = useState(() =>
-    toDatetimeLocalValue(new Date()),
+    toDatetimeLocalValue(
+      initialOccurredAt ? new Date(initialOccurredAt) : new Date(),
+    ),
   );
   const [quantity, setQuantity] = useState("");
   const [quantityUnit, setQuantityUnit] = useState("ml");
-  const [note, setNote] = useState("");
+  const [note, setNote] = useState(initialNote ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

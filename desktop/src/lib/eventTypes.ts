@@ -199,3 +199,25 @@ export function saveEventFilter(
     JSON.stringify([...enabled]),
   );
 }
+
+const ALERTS_FILTER_SUFFIX = ":show-alerts";
+
+/** Whether alert markers are shown on event rails (default true). */
+export function loadAlertsFilter(viewKey: string): boolean {
+  try {
+    const raw = localStorage.getItem(
+      `${FILTER_STORAGE_PREFIX}${viewKey}${ALERTS_FILTER_SUFFIX}`,
+    );
+    if (raw === null) return true;
+    return raw === "1";
+  } catch {
+    return true;
+  }
+}
+
+export function saveAlertsFilter(viewKey: string, show: boolean): void {
+  localStorage.setItem(
+    `${FILTER_STORAGE_PREFIX}${viewKey}${ALERTS_FILTER_SUFFIX}`,
+    show ? "1" : "0",
+  );
+}

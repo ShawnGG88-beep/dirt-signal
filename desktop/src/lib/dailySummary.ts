@@ -1,7 +1,5 @@
 import type { SensorReading } from "./api";
 import {
-  AMBIENT_DAY_END_HOUR,
-  AMBIENT_DAY_START_HOUR,
   AMBIENT_TEMP_DAY_MAX_C,
   AMBIENT_TEMP_DAY_MIN_C,
   AMBIENT_TEMP_NIGHT_MAX_C,
@@ -12,6 +10,11 @@ import {
   npkReferenceLabel,
   type ScoringSemantic,
 } from "./growingConstants";
+import {
+  DEFAULT_DEVICE_TIMEZONE,
+  isDayPeriod,
+  localDayKey as deviceLocalDayKey,
+} from "./dayNight";
 import {
   getAmbientBoundsForProfile,
   getMetricBoundsForProfile,
@@ -40,18 +43,10 @@ export interface MetricDaySummary {
 }
 
 export interface DailySummary {
-  /** YYYY-MM-DD in local calendar */
+  /** YYYY-MM-DD in device-local calendar */
   day: string;
   metrics: MetricDaySummary[];
   hasFlags: boolean;
-}
-
-function localDayKey(iso: string): string {
-  const d = new Date(iso);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
 }
 
 function formatBoundsLabel(
@@ -66,14 +61,19 @@ function formatBoundsLabel(
   return `${bounds.min}-${bounds.max}${suffix}`;
 }
 
-/** Day period is [AMBIENT_DAY_START_HOUR, AMBIENT_DAY_END_HOUR) local time. */
-export function isAmbientDayPeriod(recordedAt: string): boolean {
-  const hour = new Date(recordedAt).getHours();
-  return hour >= AMBIENT_DAY_START_HOUR && hour < AMBIENT_DAY_END_HOUR;
+/** Day period is [6, 18) in the device timezone. */
+export function isAmbientDayPeriod(
+  recordedAt: string,
+  timeZone: string = DEFAULT_DEVICE_TIMEZONE,
+): boolean {
+  return isDayPeriod(recordedAt, timeZone);
 }
 
-export function ambientBoundsFor(recordedAt: string): MetricBounds {
-  return isAmbientDayPeriod(recordedAt)
+export function ambientBoundsFor(
+  recordedAt: string,
+  timeZone: string = DEFAULT_DEVICE_TIMEZONE,
+): MetricBounds {
+  return isAmbientDayPeriod(recordedAt, timeZone)
     ? { min: AMBIENT_TEMP_DAY_MIN_C, max: AMBIENT_TEMP_DAY_MAX_C }
     : { min: AMBIENT_TEMP_NIGHT_MIN_C, max: AMBIENT_TEMP_NIGHT_MAX_C };
 }
@@ -116,8 +116,7 @@ function summariseFlatMetric(
     (isFlaggedAgainstBand(min, bounds, scoringSemantic) ||
       isFlaggedAgainstBand(max, bounds, scoringSemantic) ||
       isFlaggedAgainstBand(mean, bounds, scoringSemantic));
-  const elevated =
-    flagged && scoringSemantic === "restraint";
+  const elevated = flagged && scoringSemantic === "restraint";
   return {
     key,
     label,
@@ -136,12 +135,13 @@ function summariseFlatMetric(
   };
 }
 
-/** Flag ambient per reading against day or night bounds from timestamp. */
+/** Flag ambient per reading against day or night bounds from device timezone. */
 function summariseAmbientTemp(
   dayReadings: SensorReading[],
   cropType: string,
   lifecycleStage: string,
   scoringSemantic: ScoringSemantic,
+  timeZone: string,
 ): MetricDaySummary {
   const samples = dayReadings
     .filter(
@@ -151,7 +151,7 @@ function summariseAmbientTemp(
     .map((r) => ({ value: r.ambient_temp_c, at: r.recorded_at }));
 
   const sampleBounds = samples.map((s) =>
-    getAmbientBoundsForProfile(s.at, cropType, lifecycleStage),
+    getAmbientBoundsForProfile(s.at, cropType, lifecycleStage, timeZone),
   );
   const flaggable = sampleBounds.some((b) => b !== null);
 
@@ -247,15 +247,18 @@ function summariseNpkEstimate(
 export interface BuildDailySummariesOptions {
   cropType?: string | null;
   lifecycleStage?: string | null;
+  /** Device IANA timezone — required for correct day bucketing. */
+  timeZone?: string | null;
 }
 
-/** Build per-calendar-day summaries, most recent day first. */
+/** Build per-device-local-calendar-day summaries, most recent day first. */
 export function buildDailySummaries(
   readings: SensorReading[],
   options: BuildDailySummariesOptions = {},
 ): DailySummary[] {
   const cropType = options.cropType ?? DEFAULT_CROP_TYPE;
   const lifecycleStage = options.lifecycleStage ?? DEFAULT_LIFECYCLE_STAGE;
+  const timeZone = options.timeZone ?? DEFAULT_DEVICE_TIMEZONE;
   const scoringSemantic: ScoringSemantic = getScoringSemantic(
     cropType,
     lifecycleStage,
@@ -263,7 +266,7 @@ export function buildDailySummaries(
 
   const byDay = new Map<string, SensorReading[]>();
   for (const reading of readings) {
-    const key = localDayKey(reading.recorded_at);
+    const key = deviceLocalDayKey(reading.recorded_at, timeZone);
     const list = byDay.get(key);
     if (list) list.push(reading);
     else byDay.set(key, [reading]);
@@ -276,6 +279,7 @@ export function buildDailySummaries(
     const metrics: MetricDaySummary[] = [];
 
     for (const metric of METRICS) {
+      if (metric.derived) continue;
       if (metric.key === "ambient_temp_c") {
         metrics.push(
           summariseAmbientTemp(
@@ -283,6 +287,7 @@ export function buildDailySummaries(
             cropType,
             lifecycleStage,
             scoringSemantic,
+            timeZone,
           ),
         );
         continue;
@@ -293,8 +298,8 @@ export function buildDailySummaries(
         lifecycleStage,
       );
       const values = dayReadings
-        .map((r) => r[metric.key])
-        .filter((v): v is number => v !== null && v !== undefined);
+        .map((r) => r[metric.key as keyof SensorReading])
+        .filter((v): v is number => typeof v === "number");
       metrics.push(
         summariseFlatMetric(
           values,

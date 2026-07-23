@@ -1,17 +1,23 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  fetchAlerts,
   fetchEvents,
   fetchReadingsRange,
   HISTORY_FETCH_LIMIT,
+  type AlertEvent,
   type PlantEvent,
   type SensorReading,
 } from "../lib/api";
 import {
   DEFAULT_CROP_TYPE,
   DEFAULT_LIFECYCLE_STAGE,
+  SAMPLING_LIMITATIONS,
 } from "../lib/growingConstants";
+import { DEFAULT_DEVICE_TIMEZONE } from "../lib/dayNight";
 import {
+  loadAlertsFilter,
   loadEventFilter,
+  saveAlertsFilter,
   saveEventFilter,
   type PlantEventTypeKey,
 } from "../lib/eventTypes";
@@ -45,10 +51,12 @@ export function History({
 }: HistoryProps) {
   const [readings, setReadings] = useState<SensorReading[]>([]);
   const [events, setEvents] = useState<PlantEvent[]>([]);
+  const [alerts, setAlerts] = useState<AlertEvent[]>([]);
   const [cropType, setCropType] = useState<string>(DEFAULT_CROP_TYPE);
   const [lifecycleStage, setLifecycleStage] = useState<string>(
     DEFAULT_LIFECYCLE_STAGE,
   );
+  const [timeZone, setTimeZone] = useState(DEFAULT_DEVICE_TIMEZONE);
   const [from, setFrom] = useState(() => rangeFromPreset(preset).from);
   const [to, setTo] = useState(() => rangeFromPreset(preset).to);
   const [loading, setLoading] = useState(true);
@@ -56,15 +64,28 @@ export function History({
   const [enabledTypes, setEnabledTypes] = useState<Set<PlantEventTypeKey>>(
     () => loadEventFilter(FILTER_VIEW),
   );
+  const [showAlerts, setShowAlerts] = useState(() =>
+    loadAlertsFilter(FILTER_VIEW),
+  );
 
   const refreshEvents = useCallback(async (fromAt: Date, toAt: Date) => {
-    const result = await fetchEvents({
-      deviceName: DEVICE_NAME,
-      fromAt,
-      toAt,
-      limit: 2000,
-    });
-    setEvents(result.events);
+    const [eventsResult, alertsResult] = await Promise.all([
+      fetchEvents({
+        deviceName: DEVICE_NAME,
+        fromAt,
+        toAt,
+        limit: 2000,
+      }),
+      fetchAlerts({
+        deviceName: DEVICE_NAME,
+        status: "all",
+        fromAt,
+        toAt,
+        limit: 2000,
+      }),
+    ]);
+    setEvents(eventsResult.events);
+    setAlerts(alertsResult.alerts);
   }, []);
 
   useEffect(() => {
@@ -76,7 +97,7 @@ export function History({
     async function load() {
       setLoading(true);
       try {
-        const [range, eventsResult] = await Promise.all([
+        const [range, eventsResult, alertsResult] = await Promise.all([
           fetchReadingsRange(
             nextFrom,
             nextTo,
@@ -89,14 +110,23 @@ export function History({
             toAt: nextTo,
             limit: 2000,
           }),
+          fetchAlerts({
+            deviceName: DEVICE_NAME,
+            status: "all",
+            fromAt: nextFrom,
+            toAt: nextTo,
+            limit: 2000,
+          }),
         ]);
         if (!cancelled) {
           setReadings(range.readings);
           setEvents(eventsResult.events);
+          setAlerts(alertsResult.alerts);
           setCropType(range.crop_type ?? DEFAULT_CROP_TYPE);
           setLifecycleStage(
             range.lifecycle_stage ?? DEFAULT_LIFECYCLE_STAGE,
           );
+          setTimeZone(range.timezone ?? DEFAULT_DEVICE_TIMEZONE);
           setError(null);
         }
       } catch (err) {
@@ -104,6 +134,7 @@ export function History({
           setError(err instanceof Error ? err.message : "Failed to load history");
           setReadings([]);
           setEvents([]);
+          setAlerts([]);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -121,6 +152,11 @@ export function History({
     saveEventFilter(FILTER_VIEW, next);
   }
 
+  function onShowAlertsChange(show: boolean) {
+    setShowAlerts(show);
+    saveAlertsFilter(FILTER_VIEW, show);
+  }
+
   const hasUnknownProvenance = readings.some(
     (r) => !r.crop_type_at_reading || !r.lifecycle_stage_at_reading,
   );
@@ -132,7 +168,7 @@ export function History({
           <h1>History</h1>
           <p className="subtitle">
             Small multiples · shared window · {readings.length} readings ·{" "}
-            {events.length} events · {cropType}/{lifecycleStage}
+            {events.length} events · {alerts.length} alerts · {cropType}/{lifecycleStage} · {timeZone}
           </p>
         </div>
         <div className="view-toolbar">
@@ -157,7 +193,15 @@ export function History({
 
       {!loading && (
         <>
-          <EventTypeFilter enabled={enabledTypes} onChange={onFilterChange} />
+          <EventTypeFilter
+            enabled={enabledTypes}
+            onChange={onFilterChange}
+            showAlerts={showAlerts}
+            onShowAlertsChange={onShowAlertsChange}
+          />
+          <p className="muted" style={{ fontSize: "0.75rem" }}>
+            VPD panels: {SAMPLING_LIMITATIONS[3]}
+          </p>
           <section className="history-grid">
             {METRICS.map((metric) => (
               <article key={metric.key} className="history-panel">
@@ -175,11 +219,14 @@ export function History({
                   compact
                   deviceCropType={cropType}
                   deviceLifecycleStage={lifecycleStage}
-                  segmentByProfile
+                  timeZone={timeZone}
+                  segmentByProfile={!metric.derived}
                   events={events}
+                  alerts={alerts}
                   fromAt={from}
                   toAt={to}
                   enabledEventTypes={enabledTypes}
+                  showAlerts={showAlerts}
                   onEventsChanged={() => {
                     void refreshEvents(from, to);
                     onEventsChanged?.();

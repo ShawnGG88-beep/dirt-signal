@@ -1,0 +1,30 @@
+[
+  {
+    "id": "room_conditions",
+    "ambient_temp_c": 25.0,
+    "ambient_humidity_pct": 50.0,
+    "expect_vpd_kpa": 1.583889,
+    "expect_dew_point_c": 13.857569
+  },
+  {
+    "id": "null_temp",
+    "ambient_temp_c": null,
+    "ambient_humidity_pct": 50.0,
+    "expect_vpd_kpa": null,
+    "expect_dew_point_c": null
+  },
+  {
+    "id": "null_humidity",
+    "ambient_temp_c": 25.0,
+    "ambient_humidity_pct": null,
+    "expect_vpd_kpa": null,
+    "expect_dew_point_c": null
+  },
+  {
+    "id": "saturated",
+    "ambient_temp_c": 20.0,
+    "ambient_humidity_pct": 100.0,
+    "expect_vpd_kpa": 0.0,
+    "expect_dew_point_c": 20.0
+  }
+]

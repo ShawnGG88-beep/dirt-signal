@@ -1,0 +1,66 @@
+[
+  {
+    "id": "before_dawn_utc_is_day_jhb",
+    "recorded_at": "2026-07-23T05:00:00Z",
+    "timezone": "Africa/Johannesburg",
+    "expect_day": true,
+    "expect_local_hour": 7,
+    "expect_day_key": "2026-07-23"
+  },
+  {
+    "id": "05_utc_is_night_utc",
+    "recorded_at": "2026-07-23T05:00:00Z",
+    "timezone": "UTC",
+    "expect_day": false,
+    "expect_local_hour": 5,
+    "expect_day_key": "2026-07-23"
+  },
+  {
+    "id": "boundary_0559_jhb_still_night",
+    "recorded_at": "2026-07-23T03:59:00Z",
+    "timezone": "Africa/Johannesburg",
+    "expect_day": false,
+    "expect_local_hour": 5,
+    "expect_day_key": "2026-07-23"
+  },
+  {
+    "id": "boundary_0600_jhb_day",
+    "recorded_at": "2026-07-23T04:00:00Z",
+    "timezone": "Africa/Johannesburg",
+    "expect_day": true,
+    "expect_local_hour": 6,
+    "expect_day_key": "2026-07-23"
+  },
+  {
+    "id": "boundary_1759_jhb_day",
+    "recorded_at": "2026-07-23T15:59:00Z",
+    "timezone": "Africa/Johannesburg",
+    "expect_day": true,
+    "expect_local_hour": 17,
+    "expect_day_key": "2026-07-23"
+  },
+  {
+    "id": "boundary_1800_jhb_night",
+    "recorded_at": "2026-07-23T16:00:00Z",
+    "timezone": "Africa/Johannesburg",
+    "expect_day": false,
+    "expect_local_hour": 18,
+    "expect_day_key": "2026-07-23"
+  },
+  {
+    "id": "day_bucket_shifts_west",
+    "recorded_at": "2026-07-23T22:30:00Z",
+    "timezone": "America/Los_Angeles",
+    "expect_day": true,
+    "expect_local_hour": 15,
+    "expect_day_key": "2026-07-23"
+  },
+  {
+    "id": "day_bucket_crosses_date_line",
+    "recorded_at": "2026-07-23T14:30:00Z",
+    "timezone": "Pacific/Auckland",
+    "expect_day": false,
+    "expect_local_hour": 2,
+    "expect_day_key": "2026-07-24"
+  }
+]

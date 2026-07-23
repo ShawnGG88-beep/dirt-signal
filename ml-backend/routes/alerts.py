@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -192,7 +192,42 @@ def list_alert_rules(
         if r.get("device_id") is None or str(r.get("device_id")) == device["id"]
     ]
     filtered.sort(key=lambda r: str(r.get("rule_type") or ""))
-    rules = [_parse_rule(r) for r in filtered]
+
+    now = datetime.now(timezone.utc)
+    from_7d = (now - timedelta(days=7)).isoformat()
+    from_30d = (now - timedelta(days=30)).isoformat()
+    events = (
+        client.table("alert_events")
+        .select("rule_id, opened_at")
+        .eq("device_id", device["id"])
+        .gte("opened_at", from_30d)
+        .execute()
+        .data
+        or []
+    )
+    counts: dict[str, dict] = {}
+    for ev in events:
+        rid = str(ev.get("rule_id"))
+        opened = ev.get("opened_at")
+        bucket = counts.setdefault(
+            rid, {"fired_7d": 0, "fired_30d": 0, "last_fired_at": None}
+        )
+        bucket["fired_30d"] += 1
+        if opened and str(opened) >= from_7d:
+            bucket["fired_7d"] += 1
+        if opened and (
+            bucket["last_fired_at"] is None or str(opened) > str(bucket["last_fired_at"])
+        ):
+            bucket["last_fired_at"] = opened
+
+    rules = []
+    for r in filtered:
+        payload = dict(r)
+        stats = counts.get(str(r["id"]), {})
+        payload["fired_7d"] = int(stats.get("fired_7d") or 0)
+        payload["fired_30d"] = int(stats.get("fired_30d") or 0)
+        payload["last_fired_at"] = stats.get("last_fired_at")
+        rules.append(_parse_rule(payload))
     return AlertRulesListResponse(
         device_name=device_name,
         rules=rules,

@@ -70,6 +70,19 @@ SAMPLING_LIMITATIONS: list[str] = [
         "Michigan are cool continental. Local validation is required before "
         "any Cape Winelands claim."
     ),
+    (
+        "Air VPD assumes leaf temperature equals air temperature. That "
+        "assumption is weakest under artificial lighting and still air — "
+        "both of which describe the current indoor setup. Displayed VPD is "
+        "air VPD, not leaf-to-air VPD."
+    ),
+    (
+        "The sensor stack cannot measure leaf wetness, canopy humidity, or "
+        "rainfall. Ambient relative humidity at probe height is a weak "
+        "substitute for all three. High-humidity hours are a proxy for leaf "
+        "wetness duration, never leaf wetness itself and never a disease "
+        "risk score."
+    ),
 ]
 
 
@@ -83,6 +96,9 @@ CROP_PROFILES: dict[str, dict[str, Any]] = {
     # ------------------------------------------------------------------
     "tomato": {
         "display_name": "Tomato",
+        # Single-triangle GDD base (°C). Shared with grape today; per-crop so
+        # it can diverge later without a refactor.
+        "gdd_base_c": 10.0,
         "stages": {
             "mature": {
                 "scoring_semantic": ScoringSemantic.OPTIMAL_BAND.value,
@@ -188,6 +204,7 @@ CROP_PROFILES: dict[str, dict[str, Any]] = {
     # ------------------------------------------------------------------
     "grape_wine": {
         "display_name": "Wine grape",
+        "gdd_base_c": 10.0,
         # Zhao et al. 2019 tested five major grape varieties and found no
         # significant differences in soil OM or available nutrients. Profiles
         # split by production goal and lifecycle stage only, never cultivar.
@@ -454,6 +471,7 @@ CROP_PROFILES: dict[str, dict[str, Any]] = {
     # ------------------------------------------------------------------
     "grape_table": {
         "display_name": "Table grape",
+        "gdd_base_c": 10.0,
         # Zhao et al. 2019 tested five major grape varieties and found no
         # significant differences in soil OM or available nutrients. Profiles
         # split by production goal and lifecycle stage only, never cultivar.
@@ -550,6 +568,18 @@ def get_crop_stage(
     if stage is None:
         return CROP_PROFILES[DEFAULT_CROP_TYPE]["stages"][DEFAULT_LIFECYCLE_STAGE]
     return stage
+
+
+def get_gdd_base_c(crop_type: str | None = None) -> float:
+    """Single-triangle GDD base temperature (°C) for a crop profile."""
+    crop = CROP_PROFILES.get(crop_type or DEFAULT_CROP_TYPE)
+    if crop is None:
+        crop = CROP_PROFILES[DEFAULT_CROP_TYPE]
+    raw = crop.get("gdd_base_c", 10.0)
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return 10.0
 
 
 def get_scoring_semantic(
