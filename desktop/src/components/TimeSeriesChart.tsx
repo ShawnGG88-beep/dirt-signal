@@ -8,7 +8,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { SensorReading } from "../lib/api";
+import type { PlantEvent, SensorReading } from "../lib/api";
 import { getScoringSemantic } from "../lib/growingConstants";
 import {
   effectiveReadingProfile,
@@ -17,6 +17,8 @@ import {
   type MetricBounds,
   type MetricKey,
 } from "../lib/metrics";
+import type { PlantEventTypeKey } from "../lib/eventTypes";
+import { EventMarkerRail } from "./EventMarkerRail";
 
 interface TimeSeriesChartProps {
   readings: SensorReading[];
@@ -29,6 +31,12 @@ interface TimeSeriesChartProps {
   deviceLifecycleStage?: string;
   /** When true, segment at profile changeovers and draw per-segment bands. */
   segmentByProfile?: boolean;
+  /** Annotation markers for the same window as readings. */
+  events?: PlantEvent[];
+  fromAt?: Date;
+  toAt?: Date;
+  enabledEventTypes?: Set<PlantEventTypeKey>;
+  onEventsChanged?: () => void;
 }
 
 export interface ProfileSegment {
@@ -143,6 +151,11 @@ export function TimeSeriesChart({
   deviceCropType = "tomato",
   deviceLifecycleStage = "mature",
   segmentByProfile = false,
+  events,
+  fromAt,
+  toAt,
+  enabledEventTypes,
+  onEventsChanged,
 }: TimeSeriesChartProps) {
   const { segments, points } = annotateProfileSegments(
     readings,
@@ -151,10 +164,29 @@ export function TimeSeriesChart({
     deviceLifecycleStage,
   );
 
+  const showRail =
+    events != null &&
+    fromAt != null &&
+    toAt != null &&
+    enabledEventTypes != null &&
+    onEventsChanged != null;
+
   if (points.length === 0) {
     return (
-      <div className="chart-empty" style={{ height }}>
-        No data in this range
+      <div className="chart-with-rail">
+        <div className="chart-empty" style={{ height }}>
+          No data in this range
+        </div>
+        {showRail && (
+          <EventMarkerRail
+            events={events}
+            fromAt={fromAt}
+            toAt={toAt}
+            enabledTypes={enabledEventTypes}
+            onEventsChanged={onEventsChanged}
+            compact={compact}
+          />
+        )}
       </div>
     );
   }
@@ -198,120 +230,132 @@ export function TimeSeriesChart({
   const hasUnknownProvenance = points.some((p) => !p.provenanceKnown);
 
   return (
-    <div className="chart-wrap" style={{ height, width: "100%" }}>
-      {segmentByProfile && multiSegment && !compact && (
-        <div className="chart-segment-labels">
-          {segments.map((seg, i) => (
-            <span
-              key={`label-${seg.id}`}
-              className="chart-segment-label"
-              style={{ color: SEGMENT_COLOURS[i % SEGMENT_COLOURS.length] }}
-            >
-              {seg.label}
-              {!seg.provenanceKnown ? " (profile unknown)" : ""}
-            </span>
-          ))}
-        </div>
-      )}
-      {segmentByProfile && hasUnknownProvenance && !multiSegment && !compact && (
-        <p className="chart-provenance-note">
-          Profile unknown for this period
-        </p>
-      )}
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart
-          data={chartData}
-          margin={
-            compact
-              ? { top: 4, right: 4, left: 0, bottom: 0 }
-              : { top: 8, right: 12, left: 4, bottom: 4 }
-          }
-        >
-          <CartesianGrid stroke="#1a1a1a" strokeDasharray="3 3" />
-          <XAxis
-            dataKey="recorded_at"
-            tickFormatter={formatTick}
-            stroke="#555"
-            tick={{ fill: "#888", fontSize: compact ? 9 : 11 }}
-            minTickGap={compact ? 40 : 60}
-            hide={compact}
-          />
-          <YAxis
-            stroke="#555"
-            tick={{ fill: "#888", fontSize: compact ? 9 : 11 }}
-            width={compact ? 36 : 48}
-            domain={["auto", "auto"]}
-          />
-          {!compact && (
-            <Tooltip
-              contentStyle={{
-                background: "#0a0a0a",
-                border: "1px solid #1a1a1a",
-                fontFamily: "inherit",
-                fontSize: 12,
-              }}
-              labelStyle={{ color: "#888" }}
-              itemStyle={{ color: colour }}
-              labelFormatter={(label) => formatTooltipTime(String(label))}
-              formatter={(value) => [
-                typeof value === "number" ? value.toFixed(2) : String(value),
-                "value",
-              ]}
+    <div className="chart-with-rail">
+      <div className="chart-wrap" style={{ height, width: "100%" }}>
+        {segmentByProfile && multiSegment && !compact && (
+          <div className="chart-segment-labels">
+            {segments.map((seg, i) => (
+              <span
+                key={`label-${seg.id}`}
+                className="chart-segment-label"
+                style={{ color: SEGMENT_COLOURS[i % SEGMENT_COLOURS.length] }}
+              >
+                {seg.label}
+                {!seg.provenanceKnown ? " (profile unknown)" : ""}
+              </span>
+            ))}
+          </div>
+        )}
+        {segmentByProfile && hasUnknownProvenance && !multiSegment && !compact && (
+          <p className="chart-provenance-note">
+            Profile unknown for this period
+          </p>
+        )}
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart
+            data={chartData}
+            margin={
+              compact
+                ? { top: 4, right: 4, left: 0, bottom: 0 }
+                : { top: 8, right: 12, left: 4, bottom: 4 }
+            }
+          >
+            <CartesianGrid stroke="#1a1a1a" strokeDasharray="3 3" />
+            <XAxis
+              dataKey="recorded_at"
+              tickFormatter={formatTick}
+              stroke="#555"
+              tick={{ fill: "#888", fontSize: compact ? 9 : 11 }}
+              minTickGap={compact ? 40 : 60}
+              hide={compact}
             />
-          )}
-
-          {showBands &&
-            segments.map((seg, i) =>
-              seg.bounds ? (
-                <ReferenceArea
-                  key={`band-${seg.id}`}
-                  x1={seg.startAt}
-                  x2={seg.endAt}
-                  y1={seg.bounds.min}
-                  y2={seg.bounds.max}
-                  fill={
-                    seg.scoringSemantic === "restraint"
-                      ? "#FF8A00"
-                      : SEGMENT_COLOURS[i % SEGMENT_COLOURS.length]
-                  }
-                  fillOpacity={0.08}
-                  strokeOpacity={0}
-                />
-              ) : null,
+            <YAxis
+              stroke="#555"
+              tick={{ fill: "#888", fontSize: compact ? 9 : 11 }}
+              width={compact ? 36 : 48}
+              domain={["auto", "auto"]}
+            />
+            {!compact && (
+              <Tooltip
+                contentStyle={{
+                  background: "#0a0a0a",
+                  border: "1px solid #1a1a1a",
+                  fontFamily: "inherit",
+                  fontSize: 12,
+                }}
+                labelStyle={{ color: "#888" }}
+                itemStyle={{ color: colour }}
+                labelFormatter={(label) => formatTooltipTime(String(label))}
+                formatter={(value) => [
+                  typeof value === "number" ? value.toFixed(2) : String(value),
+                  "value",
+                ]}
+              />
             )}
 
-          {!showBands && singleBounds && (
-            <ReferenceArea
-              y1={singleBounds.min}
-              y2={singleBounds.max}
-              fill={
-                segments[0]?.scoringSemantic === "restraint"
-                  ? "#FF8A00"
-                  : "#2DB500"
-              }
-              fillOpacity={0.08}
-              strokeOpacity={0}
-            />
-          )}
+            {showBands &&
+              segments.map((seg, i) =>
+                seg.bounds ? (
+                  <ReferenceArea
+                    key={`band-${seg.id}`}
+                    x1={seg.startAt}
+                    x2={seg.endAt}
+                    y1={seg.bounds.min}
+                    y2={seg.bounds.max}
+                    fill={
+                      seg.scoringSemantic === "restraint"
+                        ? "#FF8A00"
+                        : SEGMENT_COLOURS[i % SEGMENT_COLOURS.length]
+                    }
+                    fillOpacity={0.08}
+                    strokeOpacity={0}
+                  />
+                ) : null,
+              )}
 
-          {seriesKeys.map((key, i) => (
-            <Line
-              key={key}
-              type="monotone"
-              dataKey={key}
-              stroke={
-                multiSegment
-                  ? SEGMENT_COLOURS[i % SEGMENT_COLOURS.length]
-                  : colour
-              }
-              strokeWidth={compact ? 1.25 : 1.75}
-              dot={false}
-              connectNulls={false}
-              isAnimationActive={false}
-            />
-          ))}
-        </LineChart>
-      </ResponsiveContainer>
+            {!showBands && singleBounds && (
+              <ReferenceArea
+                y1={singleBounds.min}
+                y2={singleBounds.max}
+                fill={
+                  segments[0]?.scoringSemantic === "restraint"
+                    ? "#FF8A00"
+                    : "#2DB500"
+                }
+                fillOpacity={0.08}
+                strokeOpacity={0}
+              />
+            )}
+
+            {seriesKeys.map((key, i) => (
+              <Line
+                key={key}
+                type="monotone"
+                dataKey={key}
+                stroke={
+                  multiSegment
+                    ? SEGMENT_COLOURS[i % SEGMENT_COLOURS.length]
+                    : colour
+                }
+                strokeWidth={compact ? 1.25 : 1.75}
+                dot={false}
+                connectNulls={false}
+                isAnimationActive={false}
+              />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      {showRail && (
+        <EventMarkerRail
+          events={events}
+          fromAt={fromAt}
+          toAt={toAt}
+          enabledTypes={enabledEventTypes}
+          onEventsChanged={onEventsChanged}
+          compact={compact}
+        />
+      )}
     </div>
   );
 }

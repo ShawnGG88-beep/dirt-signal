@@ -616,3 +616,112 @@ NPK_LEVELS = _TOMATO_MATURE["npk_levels"]
 N_TARGET = _TOMATO_MATURE["n_target"]
 P_TARGET = _TOMATO_MATURE["p_target"]
 K_TARGET = _TOMATO_MATURE["k_target"]
+
+
+# ---------------------------------------------------------------------------
+# Plant event types (annotation layer)
+# SOURCE OF TRUTH for event_type keys. Mirror in desktop/src/lib/eventTypes.ts.
+# ---------------------------------------------------------------------------
+
+PLANT_EVENT_TYPES: list[dict[str, Any]] = [
+    {
+        "key": "irrigation",
+        "label": "Irrigation",
+        "icon": "droplet",
+        "quantity_applicable": True,
+        "default_quantity_unit": "ml",
+    },
+    {
+        "key": "fertiliser",
+        "label": "Fertiliser",
+        "icon": "flask",
+        "quantity_applicable": True,
+        "default_quantity_unit": "ml",
+    },
+    {
+        "key": "pruning",
+        "label": "Pruning",
+        "icon": "scissors",
+        "quantity_applicable": False,
+        "default_quantity_unit": None,
+    },
+    {
+        "key": "transplant",
+        "label": "Transplant",
+        "icon": "pot",
+        "quantity_applicable": False,
+        "default_quantity_unit": None,
+    },
+    {
+        "key": "pest_disease_observation",
+        "label": "Pest / disease seen",
+        "icon": "eye",
+        "quantity_applicable": False,
+        "default_quantity_unit": None,
+    },
+    {
+        "key": "pest_disease_treatment",
+        "label": "Pest / disease treatment",
+        "icon": "spray",
+        "quantity_applicable": False,
+        "default_quantity_unit": None,
+    },
+    {
+        "key": "harvest",
+        "label": "Harvest",
+        "icon": "basket",
+        "quantity_applicable": True,
+        "default_quantity_unit": "g",
+    },
+    {
+        "key": "sensor_calibration",
+        "label": "Sensor calibration",
+        "icon": "calibrate",
+        "quantity_applicable": False,
+        "default_quantity_unit": None,
+    },
+    {
+        "key": "sensor_maintenance",
+        "label": "Sensor maintenance",
+        "icon": "wrench",
+        "quantity_applicable": False,
+        "default_quantity_unit": None,
+    },
+    {
+        "key": "stage_change",
+        "label": "Stage change",
+        "icon": "swap",
+        "quantity_applicable": False,
+        "default_quantity_unit": None,
+    },
+    {
+        "key": "observation",
+        "label": "Observation",
+        "icon": "note",
+        "quantity_applicable": False,
+        "default_quantity_unit": None,
+    },
+]
+
+PLANT_EVENT_TYPE_KEYS: frozenset[str] = frozenset(
+    str(entry["key"]) for entry in PLANT_EVENT_TYPES
+)
+
+# Colours for chart markers (stable palette, not scoring colours).
+PLANT_EVENT_COLOURS: dict[str, str] = {
+    "irrigation": "#107EEC",
+    "fertiliser": "#2DB500",
+    "pruning": "#FF8A00",
+    "transplant": "#c0c0c0",
+    "pest_disease_observation": "#e0b000",
+    "pest_disease_treatment": "#e05050",
+    "harvest": "#9b59b6",
+    "sensor_calibration": "#1abc9c",
+    "sensor_maintenance": "#e67e22",
+    "stage_change": "#888888",
+    "observation": "#555555",
+}
+
+
+def is_valid_event_type(event_type: str) -> bool:
+    return event_type in PLANT_EVENT_TYPE_KEYS

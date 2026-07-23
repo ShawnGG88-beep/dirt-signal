@@ -1,0 +1,42 @@
+/** Tauri desktop notification helpers for promoted (notify=true) alerts. */
+
+import type { AlertEvent } from "./api";
+
+function isTauri(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+export async function ensureNotificationPermission(): Promise<boolean> {
+  if (!isTauri()) return false;
+  try {
+    const {
+      isPermissionGranted,
+      requestPermission,
+    } = await import("@tauri-apps/plugin-notification");
+    let granted = await isPermissionGranted();
+    if (!granted) {
+      const permission = await requestPermission();
+      granted = permission === "granted";
+    }
+    return granted;
+  } catch {
+    return false;
+  }
+}
+
+export async function notifyAlert(alert: AlertEvent): Promise<boolean> {
+  if (!isTauri()) return false;
+  const granted = await ensureNotificationPermission();
+  if (!granted) return false;
+  try {
+    const { sendNotification } = await import(
+      "@tauri-apps/plugin-notification"
+    );
+    const title = `Dirt Signal · ${alert.severity}`;
+    const body = alert.message.slice(0, 180);
+    sendNotification({ title, body });
+    return true;
+  } catch {
+    return false;
+  }
+}

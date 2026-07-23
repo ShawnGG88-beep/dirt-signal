@@ -1,292 +1,707 @@
-import { useCallback, useEffect, useState } from "react";
 import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
+import {
+  fetchEvents,
   fetchHealth,
   fetchLatestReading,
   fetchReadingsRange,
+  staleAfterMsFromInterval,
+  type PlantEvent,
   type SensorReading,
 } from "../lib/api";
-import { PlantProfileSection } from "../components/PlantProfileSection";
+import { BandPositionBar } from "../components/BandPositionBar";
+import { LogEventForm } from "../components/LogEventForm";
 import { MetricDetailModal } from "../components/MetricDetailModal";
+import { PlantProfileSection } from "../components/PlantProfileSection";
 import { Sparkline } from "../components/Sparkline";
-import { StatusIndicator } from "../components/StatusIndicator";
+import {
+  STATUS_GLYPH,
+  STATUS_TEXT,
+} from "../components/StatusIndicator";
+import {
+  formatRelativeAge,
+  SystemStatusLine,
+} from "../components/SystemStatusLine";
+import { eventTypeLabel } from "../lib/eventTypes";
 import {
   DEFAULT_CROP_TYPE,
   DEFAULT_LIFECYCLE_STAGE,
   getScoringSemantic,
+  type ScoringSemantic,
 } from "../lib/growingConstants";
 import {
+  formatMetricValue,
   getAmbientBoundsForProfile,
   getMetricBoundsForProfile,
+  METRICS,
   scoreMetricValue,
+  type MetricDef,
   type MetricKey,
+  type MetricScore,
   type MetricStatus,
+  type RangePreset,
 } from "../lib/metrics";
 
 const DEVICE_NAME = "pi-garden-01";
 const POLL_MS = 30_000;
+const SPARK_WINDOW_LABEL = "6h";
 
-function formatValue(value: number | null | undefined, suffix = ""): string {
-  if (value === null || value === undefined) return "n/a";
-  return `${value}${suffix}`;
-}
-
-function formatTimestamp(iso: string): string {
-  return new Date(iso).toLocaleString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function statusForMetric(
+function scoreForCard(
   key: MetricKey,
   value: number | null | undefined,
   cropType: string,
   lifecycleStage: string,
   recordedAt?: string | null,
-): MetricStatus {
-  if (value === null || value === undefined) return "unknown";
+): MetricScore {
+  const semantic = getScoringSemantic(cropType, lifecycleStage);
   if (key === "moisture_raw") {
-    return "ok";
+    return scoreMetricValue(value, null, semantic, { displayOnly: true });
   }
   if (key === "ambient_temp_c") {
     const at = recordedAt ?? new Date().toISOString();
     const bounds = getAmbientBoundsForProfile(at, cropType, lifecycleStage);
-    const semantic = getScoringSemantic(cropType, lifecycleStage);
     return scoreMetricValue(value, bounds, semantic);
   }
   const bounds = getMetricBoundsForProfile(key, cropType, lifecycleStage);
-  const semantic = getScoringSemantic(cropType, lifecycleStage);
   return scoreMetricValue(value, bounds, semantic);
 }
 
-interface MetricCardProps {
-  label: string;
-  value: string;
-  status: MetricStatus;
+function sparkDelta(
+  values: number[],
+  unit: string,
+): { text: string; direction: "up" | "down" | "flat" } | null {
+  if (values.length < 2) return null;
+  const first = values[0];
+  const last = values[values.length - 1];
+  const delta = last - first;
+  const abs = Math.abs(delta);
+  const formatted = Number.isInteger(abs) ? String(abs) : abs.toFixed(1);
+  const suffix = unit ? `${formatted}${unit}` : formatted;
+  if (Math.abs(delta) < 1e-9) {
+    return { text: `→ 0${unit ? unit : ""} / ${SPARK_WINDOW_LABEL}`, direction: "flat" };
+  }
+  if (delta > 0) {
+    return { text: `↑ ${suffix} / ${SPARK_WINDOW_LABEL}`, direction: "up" };
+  }
+  return { text: `↓ ${suffix} / ${SPARK_WINDOW_LABEL}`, direction: "down" };
+}
+
+interface PrimaryCardProps {
+  metric: MetricDef;
+  value: number | null | undefined;
+  score: MetricScore;
   sparkValues: number[];
-  sparkColour?: string;
+  scoringSemantic: ScoringSemantic;
+  fetching: boolean;
+  rangeError: string | null;
+  onRetryRange: () => void;
   onOpen: () => void;
 }
 
-function MetricCard({
-  label,
+function PrimaryMetricCard({
+  metric,
   value,
-  status,
+  score,
   sparkValues,
-  sparkColour,
+  scoringSemantic,
+  fetching,
+  rangeError,
+  onRetryRange,
   onOpen,
-}: MetricCardProps) {
+}: PrimaryCardProps) {
+  const delta = sparkDelta(sparkValues, metric.unit);
+  const isNull = value === null || value === undefined;
+  const status: MetricStatus = isNull ? "unknown" : score.status;
+
+  function activate() {
+    onOpen();
+  }
+
+  function onKeyDown(e: ReactKeyboardEvent) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      activate();
+    }
+  }
+
   return (
-    <button type="button" className="metric-card" onClick={onOpen}>
+    <div
+      className={`metric-card metric-card-primary${fetching ? " metric-card-fetching" : ""}`}
+      role="button"
+      tabIndex={0}
+      onClick={activate}
+      onKeyDown={onKeyDown}
+      aria-label={`${metric.label}: ${formatMetricValue(value, metric.unit)}, ${STATUS_TEXT[status]}`}
+    >
       <div className="metric-header">
-        <span className="metric-label">{label}</span>
-        <StatusIndicator label="" status={status} />
+        <span className="metric-label">{metric.label}</span>
+        {delta && (
+          <span className={`metric-delta metric-delta-${delta.direction}`}>
+            {delta.text}
+          </span>
+        )}
       </div>
-      <div className="metric-value">{value}</div>
-      <Sparkline values={sparkValues} colour={sparkColour} />
-    </button>
+      <div className="metric-value tabular-nums">
+        {formatMetricValue(value, metric.unit)}
+      </div>
+      <BandPositionBar
+        bounds={score.bounds}
+        position={score.position}
+        status={status}
+        scoringSemantic={scoringSemantic}
+        disabled={isNull || score.bounds === null}
+      />
+      <div className={`metric-status metric-status-${status}`}>
+        <span className="metric-status-glyph" aria-hidden="true">
+          {STATUS_GLYPH[status]}
+        </span>
+        <span className="metric-status-text">{STATUS_TEXT[status]}</span>
+      </div>
+      <div className="metric-spark">
+        {rangeError ? (
+          <button
+            type="button"
+            className="metric-inline-retry"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRetryRange();
+            }}
+          >
+            Sparkline failed · retry
+          </button>
+        ) : (
+          <Sparkline
+            values={sparkValues}
+            colour={metric.colour}
+            bounds={score.bounds}
+            width={160}
+            height={36}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface ContextCardProps {
+  metric: MetricDef;
+  value: number | null | undefined;
+  score: MetricScore;
+  fetching: boolean;
+  onOpen: () => void;
+}
+
+function ContextMetricCard({
+  metric,
+  value,
+  score,
+  fetching,
+  onOpen,
+}: ContextCardProps) {
+  const isNull = value === null || value === undefined;
+  const status: MetricStatus = isNull ? "unknown" : score.status;
+
+  function onKeyDown(e: ReactKeyboardEvent) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onOpen();
+    }
+  }
+
+  return (
+    <div
+      className={`metric-card metric-card-context${fetching ? " metric-card-fetching" : ""}`}
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={onKeyDown}
+      aria-label={`${metric.label}: ${formatMetricValue(value, metric.unit)}, ${STATUS_TEXT[status]}`}
+    >
+      <div className="metric-header">
+        <span className="metric-label">{metric.label}</span>
+        <div className={`metric-status metric-status-${status}`}>
+          <span className="metric-status-glyph" aria-hidden="true">
+            {STATUS_GLYPH[status]}
+          </span>
+          <span className="metric-status-text">{STATUS_TEXT[status]}</span>
+        </div>
+      </div>
+      <div className="metric-value metric-value-compact tabular-nums">
+        {formatMetricValue(value, metric.unit)}
+      </div>
+    </div>
+  );
+}
+
+interface DiagnosticsStripProps {
+  reading: SensorReading | null;
+  expanded: boolean;
+  onToggle: () => void;
+  onOpenMetric: (key: MetricKey) => void;
+}
+
+function DiagnosticsStrip({
+  reading,
+  expanded,
+  onToggle,
+  onOpenMetric,
+}: DiagnosticsStripProps) {
+  function onKeyDown(e: ReactKeyboardEvent) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onToggle();
+    }
+  }
+
+  const raw = reading?.moisture_raw;
+  const ec = reading?.ec_us_cm ?? null;
+  const n = reading?.npk_n_est ?? null;
+  const p = reading?.npk_p_est ?? null;
+  const k = reading?.npk_k_est ?? null;
+
+  return (
+    <section className="diagnostics-strip">
+      <div
+        className="diagnostics-toggle"
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        onClick={onToggle}
+        onKeyDown={onKeyDown}
+      >
+        <span className="diagnostics-chevron" aria-hidden="true">
+          {expanded ? "▾" : "▸"}
+        </span>
+        <span>Diagnostics</span>
+        <span className="diagnostics-hint">
+          display only, not scored
+        </span>
+      </div>
+      {expanded && (
+        <div className="diagnostics-body">
+          <button
+            type="button"
+            className="diagnostics-item"
+            onClick={() => onOpenMetric("moisture_raw")}
+          >
+            <span className="diagnostics-item-label">Raw ADC</span>
+            <span className="diagnostics-item-value tabular-nums">
+              {raw === null || raw === undefined ? "—" : String(raw)}
+            </span>
+          </button>
+          <div className="diagnostics-item diagnostics-item-static">
+            <span className="diagnostics-item-label">EC µS/cm</span>
+            <span className="diagnostics-item-value tabular-nums">
+              {ec === null ? "—" : String(ec)}
+            </span>
+          </div>
+          <div className="diagnostics-item diagnostics-item-static">
+            <span className="diagnostics-item-label">N est.</span>
+            <span className="diagnostics-item-value tabular-nums">
+              {n === null ? "—" : String(n)}
+            </span>
+          </div>
+          <div className="diagnostics-item diagnostics-item-static">
+            <span className="diagnostics-item-label">P est.</span>
+            <span className="diagnostics-item-value tabular-nums">
+              {p === null ? "—" : String(p)}
+            </span>
+          </div>
+          <div className="diagnostics-item diagnostics-item-static">
+            <span className="diagnostics-item-label">K est.</span>
+            <span className="diagnostics-item-value tabular-nums">
+              {k === null ? "—" : String(k)}
+            </span>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
 interface DashboardProps {
   profileEpoch: number;
+  eventsEpoch: number;
   onProfileChanged: () => void;
+  onEventsChanged: () => void;
+  detailMetric: MetricKey | null;
+  detailRange: RangePreset;
+  onOpenMetric: (key: MetricKey) => void;
+  onCloseMetric: () => void;
+  onDetailRangeChange: (range: RangePreset) => void;
+  onOpenHistory: (range: RangePreset) => void;
 }
 
-export function Dashboard({ profileEpoch, onProfileChanged }: DashboardProps) {
+export function Dashboard({
+  profileEpoch,
+  eventsEpoch,
+  onProfileChanged,
+  onEventsChanged,
+  detailMetric,
+  detailRange,
+  onOpenMetric,
+  onCloseMetric,
+  onDetailRangeChange,
+  onOpenHistory,
+}: DashboardProps) {
   const [reading, setReading] = useState<SensorReading | null>(null);
   const [history, setHistory] = useState<SensorReading[]>([]);
+  const [recentEvents, setRecentEvents] = useState<PlantEvent[]>([]);
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [cropType, setCropType] = useState<string>(DEFAULT_CROP_TYPE);
   const [lifecycleStage, setLifecycleStage] = useState<string>(
     DEFAULT_LIFECYCLE_STAGE,
   );
-  const [sidecarOk, setSidecarOk] = useState<boolean | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
-  const [detailMetric, setDetailMetric] = useState<MetricKey | null>(null);
+  const [sidecarReachable, setSidecarReachable] = useState<boolean | null>(
+    null,
+  );
+  const [healthOk, setHealthOk] = useState<boolean | null>(null);
+  const [staleAfterMs, setStaleAfterMs] = useState(() =>
+    staleAfterMsFromInterval(undefined),
+  );
+  const [latestError, setLatestError] = useState<string | null>(null);
+  const [rangeError, setRangeError] = useState<string | null>(null);
+  const [fetching, setFetching] = useState(false);
+  const [lastPollAt, setLastPollAt] = useState<Date | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [logEventOpen, setLogEventOpen] = useState(false);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const returnFocusEl = useRef<HTMLElement | null>(null);
 
-  const refresh = useCallback(async () => {
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const refreshRange = useCallback(async () => {
     try {
-      const [health, latest, range] = await Promise.all([
-        fetchHealth(),
-        fetchLatestReading(DEVICE_NAME),
-        fetchReadingsRange(
-          new Date(Date.now() - 6 * 60 * 60 * 1000),
-          new Date(),
-          DEVICE_NAME,
-        ),
-      ]);
-      setSidecarOk(health.status === "ok");
-      setReading(latest.reading);
+      const range = await fetchReadingsRange(
+        new Date(Date.now() - 6 * 60 * 60 * 1000),
+        new Date(),
+        DEVICE_NAME,
+        120,
+      );
       setHistory(range.readings);
-      setDeviceId(latest.device_id ?? latest.reading?.device_id ?? null);
-      setCropType(latest.crop_type ?? DEFAULT_CROP_TYPE);
-      setLifecycleStage(latest.lifecycle_stage ?? DEFAULT_LIFECYCLE_STAGE);
-      setError(null);
-      setLastRefresh(new Date());
+      setRangeError(null);
     } catch (err) {
-      setSidecarOk(false);
-      setError(err instanceof Error ? err.message : "Failed to fetch data");
+      setRangeError(
+        err instanceof Error ? err.message : "Failed to fetch range",
+      );
     }
   }, []);
+
+  const refreshEvents = useCallback(async () => {
+    try {
+      const result = await fetchEvents({
+        deviceName: DEVICE_NAME,
+        limit: 5,
+      });
+      setRecentEvents(result.events);
+    } catch {
+      // Keep prior list; events are orientation, not critical path.
+    }
+  }, []);
+
+  const refresh = useCallback(async () => {
+    setFetching(true);
+
+    const healthTask = fetchHealth()
+      .then((health) => {
+        setSidecarReachable(true);
+        setHealthOk(health.status === "ok");
+        setStaleAfterMs(
+          staleAfterMsFromInterval(health.collector_interval_seconds),
+        );
+      })
+      .catch(() => {
+        setSidecarReachable(false);
+        setHealthOk(false);
+      });
+
+    const latestTask = fetchLatestReading(DEVICE_NAME)
+      .then((latest) => {
+        setReading(latest.reading);
+        setDeviceId(latest.device_id ?? latest.reading?.device_id ?? null);
+        setCropType(latest.crop_type ?? DEFAULT_CROP_TYPE);
+        setLifecycleStage(latest.lifecycle_stage ?? DEFAULT_LIFECYCLE_STAGE);
+        setLatestError(null);
+      })
+      .catch((err) => {
+        setLatestError(
+          err instanceof Error ? err.message : "Failed to fetch latest",
+        );
+      });
+
+    const rangeTask = refreshRange();
+    const eventsTask = refreshEvents();
+
+    await Promise.allSettled([healthTask, latestTask, rangeTask, eventsTask]);
+    setLastPollAt(new Date());
+    setFetching(false);
+  }, [refreshRange, refreshEvents]);
 
   useEffect(() => {
     void refresh();
     const timer = setInterval(() => void refresh(), POLL_MS);
     return () => clearInterval(timer);
-  }, [refresh, profileEpoch]);
+  }, [refresh, profileEpoch, eventsEpoch]);
 
-  const moistureHistory = history
-    .map((r) => r.moisture_pct)
-    .filter((v): v is number => v !== null);
-  const phHistory = history.map((r) => r.ph).filter((v): v is number => v !== null);
-  const soilTempHistory = history
-    .map((r) => r.soil_temp_c)
-    .filter((v): v is number => v !== null);
-  const ambientTempHistory = history
-    .map((r) => r.ambient_temp_c)
-    .filter((v): v is number => v !== null);
+  useEffect(() => {
+    if (!detailMetric && returnFocusEl.current) {
+      returnFocusEl.current.focus();
+      returnFocusEl.current = null;
+    }
+  }, [detailMetric]);
+
+  useEffect(() => {
+    if (!profileOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setProfileOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [profileOpen]);
+
+  const semantic = getScoringSemantic(cropType, lifecycleStage);
+  const primary = METRICS.filter((m) => m.tier === "primary");
+  const context = METRICS.filter((m) => m.tier === "context");
+
+  function openMetric(key: MetricKey) {
+    const active = document.activeElement;
+    if (active instanceof HTMLElement) {
+      returnFocusEl.current = active;
+    }
+    onOpenMetric(key);
+  }
+
+  function sparkFor(key: MetricKey): number[] {
+    return history
+      .map((r) => r[key])
+      .filter((v): v is number => v !== null && v !== undefined);
+  }
+
+  function valueFor(key: MetricKey): number | null | undefined {
+    return reading?.[key];
+  }
 
   return (
     <div className="dashboard">
       <header className="dashboard-header">
         <div>
           <h1>Dirt Signal</h1>
-          <p className="subtitle">
-            {DEVICE_NAME}
-            {reading && ` · last reading ${formatTimestamp(reading.recorded_at)}`}
-            {` · ${cropType}/${lifecycleStage}`}
-          </p>
         </div>
-        <div className="status-row">
-          <StatusIndicator
-            label="Sidecar"
-            status={sidecarOk === null ? "unknown" : sidecarOk ? "ok" : "error"}
-            detail={sidecarOk ? "8731" : "offline"}
-          />
-          <StatusIndicator
-            label="Collector"
-            status={reading ? "ok" : "unknown"}
-            detail={reading ? "receiving" : "no data"}
-          />
-          {lastRefresh && (
-            <span className="refresh-time">
-              refreshed {formatTimestamp(lastRefresh.toISOString())}
-            </span>
-          )}
-        </div>
+        <SystemStatusLine
+          sidecarReachable={sidecarReachable}
+          healthOk={healthOk}
+          deviceName={DEVICE_NAME}
+          readingAt={reading?.recorded_at ?? null}
+          cropType={cropType}
+          lifecycleStage={lifecycleStage}
+          lastPollAt={lastPollAt}
+          staleAfterMs={staleAfterMs}
+          onOpenProfile={() => setProfileOpen(true)}
+        />
       </header>
 
-      {error && <div className="error-banner">{error}</div>}
+      <div className="dashboard-actions">
+        <button
+          type="button"
+          className="log-event-btn"
+          onClick={() => setLogEventOpen(true)}
+        >
+          Log event
+        </button>
+      </div>
 
-      <section className="metrics-grid">
-        <MetricCard
-          label="Moisture"
-          value={formatValue(reading?.moisture_pct, "%")}
-          status={statusForMetric(
-            "moisture_pct",
-            reading?.moisture_pct,
-            cropType,
-            lifecycleStage,
-          )}
-          sparkValues={moistureHistory}
-          onOpen={() => setDetailMetric("moisture_pct")}
-        />
-        <MetricCard
-          label="pH"
-          value={formatValue(reading?.ph)}
-          status={statusForMetric("ph", reading?.ph, cropType, lifecycleStage)}
-          sparkValues={phHistory}
-          sparkColour="#107EEC"
-          onOpen={() => setDetailMetric("ph")}
-        />
-        <MetricCard
-          label="Soil temp"
-          value={formatValue(reading?.soil_temp_c, " °C")}
-          status={statusForMetric(
-            "soil_temp_c",
-            reading?.soil_temp_c,
-            cropType,
-            lifecycleStage,
-          )}
-          sparkValues={soilTempHistory}
-          sparkColour="#FF8A00"
-          onOpen={() => setDetailMetric("soil_temp_c")}
-        />
-        <MetricCard
-          label="Ambient temp"
-          value={formatValue(reading?.ambient_temp_c, " °C")}
-          status={statusForMetric(
-            "ambient_temp_c",
-            reading?.ambient_temp_c,
-            cropType,
-            lifecycleStage,
-            reading?.recorded_at,
-          )}
-          sparkValues={ambientTempHistory}
-          sparkColour="#107EEC"
-          onOpen={() => setDetailMetric("ambient_temp_c")}
-        />
-        <MetricCard
-          label="Humidity"
-          value={formatValue(reading?.ambient_humidity_pct, "%")}
-          status={statusForMetric(
-            "ambient_humidity_pct",
-            reading?.ambient_humidity_pct,
-            cropType,
-            lifecycleStage,
-          )}
-          sparkValues={history
-            .map((r) => r.ambient_humidity_pct)
-            .filter((v): v is number => v !== null)}
-          onOpen={() => setDetailMetric("ambient_humidity_pct")}
-        />
-        <MetricCard
-          label="Raw ADC"
-          value={formatValue(reading?.moisture_raw)}
-          status={statusForMetric(
-            "moisture_raw",
-            reading?.moisture_raw,
-            cropType,
-            lifecycleStage,
-          )}
-          sparkValues={history
-            .map((r) => r.moisture_raw)
-            .filter((v): v is number => v !== null)}
-          onOpen={() => setDetailMetric("moisture_raw")}
-        />
-      </section>
+      {fetching && <div className="fetch-progress" aria-hidden="true" />}
 
-      <PlantProfileSection
-        deviceId={deviceId}
-        cropType={cropType}
-        lifecycleStage={lifecycleStage}
-        onProfileSaved={(nextCrop, nextStage) => {
-          setCropType(nextCrop);
-          setLifecycleStage(nextStage);
-          onProfileChanged();
-          void refresh();
-        }}
-      />
+      {latestError && !reading && (
+        <div className="error-banner">{latestError}</div>
+      )}
+
+      <div className={fetching ? "dashboard-content is-fetching" : "dashboard-content"}>
+        <section className="metrics-primary" aria-label="Primary metrics">
+          {primary.map((metric) => {
+            const value = valueFor(metric.key);
+            const score = scoreForCard(
+              metric.key,
+              value,
+              cropType,
+              lifecycleStage,
+              reading?.recorded_at,
+            );
+            return (
+              <PrimaryMetricCard
+                key={metric.key}
+                metric={metric}
+                value={value}
+                score={score}
+                sparkValues={sparkFor(metric.key)}
+                scoringSemantic={semantic}
+                fetching={fetching}
+                rangeError={rangeError}
+                onRetryRange={() => void refreshRange()}
+                onOpen={() => openMetric(metric.key)}
+              />
+            );
+          })}
+        </section>
+
+        <section className="metrics-context" aria-label="Context metrics">
+          {context.map((metric) => {
+            const value = valueFor(metric.key);
+            const score = scoreForCard(
+              metric.key,
+              value,
+              cropType,
+              lifecycleStage,
+              reading?.recorded_at,
+            );
+            return (
+              <ContextMetricCard
+                key={metric.key}
+                metric={metric}
+                value={value}
+                score={score}
+                fetching={fetching}
+                onOpen={() => openMetric(metric.key)}
+              />
+            );
+          })}
+        </section>
+
+        <section className="recent-events" aria-label="Recent events">
+          <div className="recent-events-header">
+            <h2>Recent events</h2>
+            <span className="recent-events-hint">last 5</span>
+          </div>
+          {recentEvents.length === 0 ? (
+            <p className="recent-events-empty">No events yet</p>
+          ) : (
+            <ul className="recent-events-list">
+              {recentEvents.map((event) => {
+                const age = formatRelativeAge(
+                  new Date(event.occurred_at).getTime(),
+                  nowMs,
+                );
+                const range = historyRangeForEvent(event.occurred_at);
+                return (
+                  <li key={event.id}>
+                    <button
+                      type="button"
+                      className="recent-event-link"
+                      onClick={() => onOpenHistory(range)}
+                      title={`Open History (${range})`}
+                    >
+                      <span className="recent-event-type">
+                        {eventTypeLabel(event.event_type).toLowerCase()}
+                      </span>
+                      <span className="recent-event-age">{age} ago</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+
+        <DiagnosticsStrip
+          reading={reading}
+          expanded={diagnosticsOpen}
+          onToggle={() => setDiagnosticsOpen((v) => !v)}
+          onOpenMetric={openMetric}
+        />
+      </div>
 
       <footer className="dashboard-footer">
-        <span>6h sparklines · polls every 30s · click a card for detail</span>
-        <button type="button" className="refresh-btn" onClick={() => void refresh()}>
+        <span>6h sparklines · polls every 30s · Enter or click a card for detail</span>
+        <button
+          type="button"
+          className="refresh-btn"
+          onClick={() => void refresh()}
+          disabled={fetching}
+        >
           Refresh now
         </button>
       </footer>
 
+      {profileOpen && (
+        <div
+          className="drawer-backdrop"
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setProfileOpen(false);
+          }}
+        >
+          <aside
+            className="profile-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="profile-drawer-title"
+          >
+            <header className="drawer-header">
+              <h2 id="profile-drawer-title">Plant profile</h2>
+              <button
+                type="button"
+                className="refresh-btn"
+                onClick={() => setProfileOpen(false)}
+              >
+                Close
+              </button>
+            </header>
+            <PlantProfileSection
+              deviceId={deviceId}
+              cropType={cropType}
+              lifecycleStage={lifecycleStage}
+              onProfileSaved={(nextCrop, nextStage) => {
+                setCropType(nextCrop);
+                setLifecycleStage(nextStage);
+                onProfileChanged();
+                setProfileOpen(false);
+                void refresh();
+              }}
+            />
+          </aside>
+        </div>
+      )}
+
+      {logEventOpen && (
+        <LogEventForm
+          deviceName={DEVICE_NAME}
+          onClose={() => setLogEventOpen(false)}
+          onSaved={() => {
+            void refreshEvents();
+            onEventsChanged();
+          }}
+        />
+      )}
+
       {detailMetric && (
         <MetricDetailModal
           metricKey={detailMetric}
+          range={detailRange}
+          onRangeChange={onDetailRangeChange}
           deviceCropType={cropType}
           deviceLifecycleStage={lifecycleStage}
-          onClose={() => setDetailMetric(null)}
+          eventsEpoch={eventsEpoch}
+          onEventsChanged={onEventsChanged}
+          onClose={onCloseMetric}
         />
       )}
     </div>
   );
+}
+
+/** Pick a History range that includes the event timestamp. */
+function historyRangeForEvent(occurredAt: string): RangePreset {
+  const ageMs = Date.now() - new Date(occurredAt).getTime();
+  if (ageMs <= 24 * 60 * 60 * 1000) return "24h";
+  if (ageMs <= 7 * 24 * 60 * 60 * 1000) return "7d";
+  return "30d";
 }

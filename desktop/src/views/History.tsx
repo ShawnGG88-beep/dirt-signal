@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
+  fetchEvents,
   fetchReadingsRange,
   HISTORY_FETCH_LIMIT,
+  type PlantEvent,
   type SensorReading,
 } from "../lib/api";
 import {
@@ -9,31 +11,61 @@ import {
   DEFAULT_LIFECYCLE_STAGE,
 } from "../lib/growingConstants";
 import {
+  loadEventFilter,
+  saveEventFilter,
+  type PlantEventTypeKey,
+} from "../lib/eventTypes";
+import {
   METRICS,
   rangeFromPreset,
   type RangePreset,
 } from "../lib/metrics";
+import { EventTypeFilter } from "../components/EventMarkerRail";
 import { ExportButton } from "../components/ExportButton";
 import { RangePicker } from "../components/RangePicker";
 import { TimeSeriesChart } from "../components/TimeSeriesChart";
 
 const DEVICE_NAME = "pi-garden-01";
+const FILTER_VIEW = "history";
 
 interface HistoryProps {
   profileEpoch: number;
+  eventsEpoch?: number;
+  range: RangePreset;
+  onRangeChange: (range: RangePreset) => void;
+  onEventsChanged?: () => void;
 }
 
-export function History({ profileEpoch }: HistoryProps) {
-  const [preset, setPreset] = useState<RangePreset>("24h");
+export function History({
+  profileEpoch,
+  eventsEpoch = 0,
+  range: preset,
+  onRangeChange,
+  onEventsChanged,
+}: HistoryProps) {
   const [readings, setReadings] = useState<SensorReading[]>([]);
+  const [events, setEvents] = useState<PlantEvent[]>([]);
   const [cropType, setCropType] = useState<string>(DEFAULT_CROP_TYPE);
   const [lifecycleStage, setLifecycleStage] = useState<string>(
     DEFAULT_LIFECYCLE_STAGE,
   );
-  const [from, setFrom] = useState(() => rangeFromPreset("24h").from);
-  const [to, setTo] = useState(() => rangeFromPreset("24h").to);
+  const [from, setFrom] = useState(() => rangeFromPreset(preset).from);
+  const [to, setTo] = useState(() => rangeFromPreset(preset).to);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [enabledTypes, setEnabledTypes] = useState<Set<PlantEventTypeKey>>(
+    () => loadEventFilter(FILTER_VIEW),
+  );
+
+  const refreshEvents = useCallback(async (fromAt: Date, toAt: Date) => {
+    const result = await fetchEvents({
+      deviceName: DEVICE_NAME,
+      fromAt,
+      toAt,
+      limit: 2000,
+    });
+    setEvents(result.events);
+  }, []);
 
   useEffect(() => {
     const { from: nextFrom, to: nextTo } = rangeFromPreset(preset);
@@ -44,14 +76,23 @@ export function History({ profileEpoch }: HistoryProps) {
     async function load() {
       setLoading(true);
       try {
-        const range = await fetchReadingsRange(
-          nextFrom,
-          nextTo,
-          DEVICE_NAME,
-          HISTORY_FETCH_LIMIT,
-        );
+        const [range, eventsResult] = await Promise.all([
+          fetchReadingsRange(
+            nextFrom,
+            nextTo,
+            DEVICE_NAME,
+            HISTORY_FETCH_LIMIT,
+          ),
+          fetchEvents({
+            deviceName: DEVICE_NAME,
+            fromAt: nextFrom,
+            toAt: nextTo,
+            limit: 2000,
+          }),
+        ]);
         if (!cancelled) {
           setReadings(range.readings);
+          setEvents(eventsResult.events);
           setCropType(range.crop_type ?? DEFAULT_CROP_TYPE);
           setLifecycleStage(
             range.lifecycle_stage ?? DEFAULT_LIFECYCLE_STAGE,
@@ -62,6 +103,7 @@ export function History({ profileEpoch }: HistoryProps) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Failed to load history");
           setReadings([]);
+          setEvents([]);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -72,7 +114,12 @@ export function History({ profileEpoch }: HistoryProps) {
     return () => {
       cancelled = true;
     };
-  }, [preset, profileEpoch]);
+  }, [preset, profileEpoch, eventsEpoch]);
+
+  function onFilterChange(next: Set<PlantEventTypeKey>) {
+    setEnabledTypes(next);
+    saveEventFilter(FILTER_VIEW, next);
+  }
 
   const hasUnknownProvenance = readings.some(
     (r) => !r.crop_type_at_reading || !r.lifecycle_stage_at_reading,
@@ -85,12 +132,17 @@ export function History({ profileEpoch }: HistoryProps) {
           <h1>History</h1>
           <p className="subtitle">
             Small multiples · shared window · {readings.length} readings ·{" "}
-            {cropType}/{lifecycleStage}
+            {events.length} events · {cropType}/{lifecycleStage}
           </p>
         </div>
         <div className="view-toolbar">
-          <RangePicker value={preset} onChange={setPreset} />
-          <ExportButton readings={readings} from={from} to={to} />
+          <RangePicker value={preset} onChange={onRangeChange} />
+          <ExportButton
+            readings={readings}
+            events={events}
+            from={from}
+            to={to}
+          />
         </div>
       </header>
 
@@ -104,28 +156,39 @@ export function History({ profileEpoch }: HistoryProps) {
       )}
 
       {!loading && (
-        <section className="history-grid">
-          {METRICS.map((metric) => (
-            <article key={metric.key} className="history-panel">
-              <div className="history-panel-header">
-                <span className="metric-label">{metric.label}</span>
-                {metric.unit && (
-                  <span className="history-unit">{metric.unit}</span>
-                )}
-              </div>
-              <TimeSeriesChart
-                readings={readings}
-                metricKey={metric.key}
-                colour={metric.colour}
-                height={160}
-                compact
-                deviceCropType={cropType}
-                deviceLifecycleStage={lifecycleStage}
-                segmentByProfile
-              />
-            </article>
-          ))}
-        </section>
+        <>
+          <EventTypeFilter enabled={enabledTypes} onChange={onFilterChange} />
+          <section className="history-grid">
+            {METRICS.map((metric) => (
+              <article key={metric.key} className="history-panel">
+                <div className="history-panel-header">
+                  <span className="metric-label">{metric.label}</span>
+                  {metric.unit && (
+                    <span className="history-unit">{metric.unit}</span>
+                  )}
+                </div>
+                <TimeSeriesChart
+                  readings={readings}
+                  metricKey={metric.key}
+                  colour={metric.colour}
+                  height={160}
+                  compact
+                  deviceCropType={cropType}
+                  deviceLifecycleStage={lifecycleStage}
+                  segmentByProfile
+                  events={events}
+                  fromAt={from}
+                  toAt={to}
+                  enabledEventTypes={enabledTypes}
+                  onEventsChanged={() => {
+                    void refreshEvents(from, to);
+                    onEventsChanged?.();
+                  }}
+                />
+              </article>
+            ))}
+          </section>
+        </>
       )}
     </div>
   );

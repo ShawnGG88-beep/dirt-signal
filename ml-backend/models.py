@@ -93,3 +93,130 @@ class SoilTest(SoilTestCreate):
 
 class SoilTestResponse(BaseModel):
     soil_test: SoilTest
+
+
+class PlantEventCreate(BaseModel):
+    device_name: str = "pi-garden-01"
+    occurred_at: datetime
+    event_type: str
+    quantity: float | None = None
+    quantity_unit: str | None = None
+    note: str | None = None
+    source: Literal["manual", "system"] = "manual"
+
+
+class PlantEventUpdate(BaseModel):
+    occurred_at: datetime | None = None
+    event_type: str | None = None
+    quantity: float | None = None
+    quantity_unit: str | None = None
+    note: str | None = None
+    # True clears quantity/unit (PATCH cannot distinguish omit vs null otherwise).
+    clear_quantity: bool = False
+
+
+class PlantEvent(BaseModel):
+    id: str
+    device_id: str
+    occurred_at: datetime
+    created_at: datetime
+    event_type: str
+    quantity: float | None = None
+    quantity_unit: str | None = None
+    note: str | None = None
+    source: str
+    crop_type_at_event: str | None = None
+    lifecycle_stage_at_event: str | None = None
+
+
+class PlantEventResponse(BaseModel):
+    event: PlantEvent
+
+
+class PlantEventsListResponse(BaseModel):
+    device_name: str
+    events: list[PlantEvent] = Field(default_factory=list)
+    count: int = 0
+
+
+AlertSeverity = Literal["info", "warning", "critical"]
+AlertRuleType = Literal[
+    "frost_risk",
+    "sustained_out_of_bounds",
+    "approaching_bound",
+    "collector_silence",
+    "irrigation_due",
+    "disease_pressure",
+]
+
+
+class AlertEvent(BaseModel):
+    id: str
+    rule_id: str
+    device_id: str
+    opened_at: datetime
+    closed_at: datetime | None = None
+    severity: AlertSeverity
+    metric_key: str | None = None
+    trigger_value: float | None = None
+    message: str
+    notified: bool = False
+    acknowledged_at: datetime | None = None
+    ack_note: str | None = None
+    # Joined from alert_rules for UI convenience
+    rule_type: AlertRuleType | None = None
+    rule_notify: bool | None = None
+    rule_enabled: bool | None = None
+
+
+class AlertEventsListResponse(BaseModel):
+    device_name: str
+    alerts: list[AlertEvent] = Field(default_factory=list)
+    count: int = 0
+
+
+class AlertAcknowledgeBody(BaseModel):
+    note: str | None = None
+
+
+class AlertEventResponse(BaseModel):
+    alert: AlertEvent
+
+
+class AlertRule(BaseModel):
+    id: str
+    device_id: str | None = None
+    rule_type: AlertRuleType
+    enabled: bool
+    notify: bool
+    params: dict = Field(default_factory=dict)
+    snoozed_until: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AlertRulesListResponse(BaseModel):
+    device_name: str
+    rules: list[AlertRule] = Field(default_factory=list)
+    count: int = 0
+
+
+class AlertRuleUpdate(BaseModel):
+    enabled: bool | None = None
+    notify: bool | None = None
+    params: dict | None = None
+    snoozed_until: datetime | None = None
+    clear_snooze: bool = False
+
+
+class AlertRuleResponse(BaseModel):
+    rule: AlertRule
+
+
+class AlertEvaluateResponse(BaseModel):
+    evaluated_at: datetime
+    devices: int
+    rules: int
+    evaluated: int
+    opened: int
+    closed: int
