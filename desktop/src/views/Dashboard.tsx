@@ -194,7 +194,6 @@ function PrimaryMetricCard({
         ) : (
           <Sparkline
             values={sparkValues}
-            colour={metric.colour}
             bounds={score.bounds}
             width={160}
             height={36}

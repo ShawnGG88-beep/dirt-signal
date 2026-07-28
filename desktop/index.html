@@ -5,6 +5,27 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Dirt Signal</title>
+    <script>
+      (function () {
+        try {
+          var pref = localStorage.getItem("dirt-signal-theme") || "system";
+          var resolved =
+            pref === "system"
+              ? window.matchMedia("(prefers-color-scheme: light)").matches
+                ? "light"
+                : "dark"
+              : pref;
+          document.documentElement.setAttribute("data-theme", resolved);
+          document.documentElement.setAttribute(
+            "data-theme-preference",
+            pref === "dark" || pref === "light" || pref === "system"
+              ? pref
+              : "system",
+          );
+          document.documentElement.style.colorScheme = resolved;
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

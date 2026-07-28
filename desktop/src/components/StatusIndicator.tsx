@@ -8,15 +8,6 @@ interface StatusIndicatorProps {
   showStatusText?: boolean;
 }
 
-const STATUS_COLOURS: Record<MetricStatus, string> = {
-  ok: "#2DB500",
-  watch: "#FF8A00",
-  warn: "#FF8A00",
-  elevated: "#FF8A00",
-  error: "#ff4444",
-  unknown: "#555555",
-};
-
 /** Distinct glyph per status so colour is never the sole carrier. */
 export const STATUS_GLYPH: Record<MetricStatus, string> = {
   ok: "✓",
@@ -44,18 +35,12 @@ export function StatusIndicator({
 }: StatusIndicatorProps) {
   return (
     <div className={`status-indicator status-${status}`}>
-      <span
-        className="status-glyph"
-        style={{ color: STATUS_COLOURS[status] }}
-        aria-hidden="true"
-      >
+      <span className="status-glyph" aria-hidden="true">
         {STATUS_GLYPH[status]}
       </span>
       {label && <span className="status-label">{label}</span>}
       {showStatusText && (
-        <span className="status-text" style={{ color: STATUS_COLOURS[status] }}>
-          {STATUS_TEXT[status]}
-        </span>
+        <span className="status-text">{STATUS_TEXT[status]}</span>
       )}
       {detail && <span className="status-detail">{detail}</span>}
     </div>

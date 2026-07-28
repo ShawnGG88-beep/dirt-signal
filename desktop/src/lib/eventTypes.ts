@@ -5,6 +5,8 @@
  * Mirror that file when adding or renaming types. Do not invent keys here.
  */
 
+import { getToken } from "./theme";
+
 export type PlantEventTypeKey =
   | "irrigation"
   | "fertiliser"
@@ -29,6 +31,11 @@ export interface PlantEventTypeDef {
   glyph: string;
 }
 
+/**
+ * `colour` holds a CSS custom-property name from tokens.css (e.g.
+ * `--event-irrigation`). Use `eventTypeColourCss` for inline styles and
+ * `eventTypeColourResolved` when a concrete value is required.
+ */
 export const PLANT_EVENT_TYPES: readonly PlantEventTypeDef[] = [
   {
     key: "irrigation",
@@ -36,7 +43,7 @@ export const PLANT_EVENT_TYPES: readonly PlantEventTypeDef[] = [
     icon: "droplet",
     quantityApplicable: true,
     defaultQuantityUnit: "ml",
-    colour: "#107EEC",
+    colour: "--event-irrigation",
     glyph: "~",
   },
   {
@@ -45,7 +52,7 @@ export const PLANT_EVENT_TYPES: readonly PlantEventTypeDef[] = [
     icon: "flask",
     quantityApplicable: true,
     defaultQuantityUnit: "ml",
-    colour: "#2DB500",
+    colour: "--event-fertiliser",
     glyph: "*",
   },
   {
@@ -54,7 +61,7 @@ export const PLANT_EVENT_TYPES: readonly PlantEventTypeDef[] = [
     icon: "scissors",
     quantityApplicable: false,
     defaultQuantityUnit: null,
-    colour: "#FF8A00",
+    colour: "--event-pruning",
     glyph: "x",
   },
   {
@@ -63,7 +70,7 @@ export const PLANT_EVENT_TYPES: readonly PlantEventTypeDef[] = [
     icon: "pot",
     quantityApplicable: false,
     defaultQuantityUnit: null,
-    colour: "#c0c0c0",
+    colour: "--event-transplant",
     glyph: "+",
   },
   {
@@ -72,7 +79,7 @@ export const PLANT_EVENT_TYPES: readonly PlantEventTypeDef[] = [
     icon: "eye",
     quantityApplicable: false,
     defaultQuantityUnit: null,
-    colour: "#e0b000",
+    colour: "--event-pest-observation",
     glyph: "o",
   },
   {
@@ -81,7 +88,7 @@ export const PLANT_EVENT_TYPES: readonly PlantEventTypeDef[] = [
     icon: "spray",
     quantityApplicable: false,
     defaultQuantityUnit: null,
-    colour: "#e05050",
+    colour: "--event-pest-treatment",
     glyph: "!",
   },
   {
@@ -90,7 +97,7 @@ export const PLANT_EVENT_TYPES: readonly PlantEventTypeDef[] = [
     icon: "basket",
     quantityApplicable: true,
     defaultQuantityUnit: "g",
-    colour: "#9b59b6",
+    colour: "--event-harvest",
     glyph: "#",
   },
   {
@@ -99,7 +106,7 @@ export const PLANT_EVENT_TYPES: readonly PlantEventTypeDef[] = [
     icon: "calibrate",
     quantityApplicable: false,
     defaultQuantityUnit: null,
-    colour: "#1abc9c",
+    colour: "--event-calibration",
     glyph: "=",
   },
   {
@@ -108,7 +115,7 @@ export const PLANT_EVENT_TYPES: readonly PlantEventTypeDef[] = [
     icon: "wrench",
     quantityApplicable: false,
     defaultQuantityUnit: null,
-    colour: "#e67e22",
+    colour: "--event-maintenance",
     glyph: "/",
   },
   {
@@ -117,7 +124,7 @@ export const PLANT_EVENT_TYPES: readonly PlantEventTypeDef[] = [
     icon: "swap",
     quantityApplicable: false,
     defaultQuantityUnit: null,
-    colour: "#888888",
+    colour: "--event-stage-change",
     glyph: ">",
   },
   {
@@ -126,7 +133,7 @@ export const PLANT_EVENT_TYPES: readonly PlantEventTypeDef[] = [
     icon: "note",
     quantityApplicable: false,
     defaultQuantityUnit: null,
-    colour: "#555555",
+    colour: "--event-observation",
     glyph: ".",
   },
 ] as const;
@@ -146,8 +153,19 @@ export function eventTypeLabel(key: string): string {
   return getEventType(key)?.label ?? key;
 }
 
+/** CSS custom-property name for this event type (e.g. `--event-irrigation`). */
+export function eventTypeColourToken(key: string): string {
+  return getEventType(key)?.colour ?? "--event-observation";
+}
+
+/** `var(--token)` for inline styles / CSS custom properties. */
 export function eventTypeColour(key: string): string {
-  return getEventType(key)?.colour ?? "#555555";
+  return `var(${eventTypeColourToken(key)})`;
+}
+
+/** Concrete computed colour — for APIs that cannot consume `var()`. */
+export function eventTypeColourResolved(key: string): string {
+  return getToken(eventTypeColourToken(key));
 }
 
 export function eventTypeGlyph(key: string): string {

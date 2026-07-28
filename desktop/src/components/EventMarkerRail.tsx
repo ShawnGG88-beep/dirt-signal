@@ -42,9 +42,9 @@ function timeToPct(iso: string, fromMs: number, spanMs: number): number {
 }
 
 function severityColour(severity: string): string {
-  if (severity === "critical") return "#ff4444";
-  if (severity === "warning") return "#FF8A00";
-  return "#107EEC";
+  if (severity === "critical") return "var(--status-critical)";
+  if (severity === "warning") return "var(--status-warn)";
+  return "var(--accent-info)";
 }
 
 function formatWhen(iso: string): string {
@@ -166,7 +166,7 @@ export function EventMarkerRail({
       <div className="event-rail-track" ref={trackRef}>
         {clusters.map((cluster) => {
           const single = cluster.items.length === 1 ? cluster.items[0] : null;
-          let colour = "#c0c0c0";
+          let colour = "var(--text-secondary)";
           let label = `${cluster.items.length} markers`;
           let glyph = String(cluster.items.length);
           let extraClass = "";
@@ -335,7 +335,7 @@ export function EventTypeFilter({
                 ? "event-filter-chip event-filter-chip-on"
                 : "event-filter-chip"
             }
-            style={{ ["--event-colour" as string]: t.colour }}
+            style={{ ["--event-colour" as string]: `var(${t.colour})` }}
             aria-pressed={on}
             title={t.label}
             onClick={() => toggle(t.key)}
@@ -353,7 +353,9 @@ export function EventTypeFilter({
               ? "event-filter-chip event-filter-chip-on"
               : "event-filter-chip"
           }
-          style={{ ["--event-colour" as string]: "#ff4444" }}
+          style={{
+            ["--event-colour" as string]: "var(--status-critical)",
+          }}
           aria-pressed={showAlerts}
           title="Alert openings"
           onClick={() => onShowAlertsChange(!showAlerts)}

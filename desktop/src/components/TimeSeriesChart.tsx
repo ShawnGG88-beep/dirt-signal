@@ -22,12 +22,12 @@ import {
   type MetricKey,
 } from "../lib/metrics";
 import type { PlantEventTypeKey } from "../lib/eventTypes";
+import { useTokens } from "../lib/theme";
 import { EventMarkerRail } from "./EventMarkerRail";
 
 interface TimeSeriesChartProps {
   readings: SensorReading[];
   metricKey: MetricKey;
-  colour?: string;
   height?: number;
   compact?: boolean;
   /** Device current profile: fallback when reading provenance is null. */
@@ -169,12 +169,25 @@ export function annotateProfileSegments(
   return { segments, points };
 }
 
-const SEGMENT_COLOURS = ["#2DB500", "#107EEC", "#FF8A00", "#c0c0c0"];
+const SEGMENT_TOKEN_NAMES = [
+  "--chart-segment-1",
+  "--chart-segment-2",
+  "--chart-segment-3",
+  "--chart-segment-4",
+] as const;
+
+const CHART_TOKEN_NAMES = [
+  "--chart-line",
+  "--chart-band-fill",
+  "--border",
+  "--text-secondary",
+  "--surface-2",
+  ...SEGMENT_TOKEN_NAMES,
+] as const;
 
 export function TimeSeriesChart({
   readings,
   metricKey,
-  colour = "#2DB500",
   height = 280,
   compact = false,
   deviceCropType = "tomato",
@@ -189,6 +202,14 @@ export function TimeSeriesChart({
   showAlerts = true,
   onEventsChanged,
 }: TimeSeriesChartProps) {
+  const tokens = useTokens(CHART_TOKEN_NAMES);
+  const chartLine = tokens["--chart-line"];
+  const chartBand = tokens["--chart-band-fill"];
+  const border = tokens["--border"];
+  const textSecondary = tokens["--text-secondary"];
+  const surface2 = tokens["--surface-2"];
+  const segmentColours = SEGMENT_TOKEN_NAMES.map((name) => tokens[name]);
+
   const { segments, points } = annotateProfileSegments(
     readings,
     metricKey,
@@ -283,7 +304,9 @@ export function TimeSeriesChart({
               <span
                 key={`label-${seg.id}`}
                 className="chart-segment-label"
-                style={{ color: SEGMENT_COLOURS[i % SEGMENT_COLOURS.length] }}
+                style={{
+                  color: segmentColours[i % segmentColours.length],
+                }}
               >
                 {seg.label}
                 {!seg.provenanceKnown ? " (profile unknown)" : ""}
@@ -291,11 +314,14 @@ export function TimeSeriesChart({
             ))}
           </div>
         )}
-        {segmentByProfile && hasUnknownProvenance && !multiSegment && !compact && (
-          <p className="chart-provenance-note">
-            Profile unknown for this period
-          </p>
-        )}
+        {segmentByProfile &&
+          hasUnknownProvenance &&
+          !multiSegment &&
+          !compact && (
+            <p className="chart-provenance-note">
+              Profile unknown for this period
+            </p>
+          )}
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={chartData}
@@ -305,31 +331,31 @@ export function TimeSeriesChart({
                 : { top: 8, right: 12, left: 4, bottom: 4 }
             }
           >
-            <CartesianGrid stroke="#1a1a1a" strokeDasharray="3 3" />
+            <CartesianGrid stroke={border} strokeDasharray="3 3" />
             <XAxis
               dataKey="recorded_at"
               tickFormatter={formatTick}
-              stroke="#555"
-              tick={{ fill: "#888", fontSize: compact ? 9 : 11 }}
+              stroke={border}
+              tick={{ fill: textSecondary, fontSize: compact ? 9 : 11 }}
               minTickGap={compact ? 40 : 60}
               hide={compact}
             />
             <YAxis
-              stroke="#555"
-              tick={{ fill: "#888", fontSize: compact ? 9 : 11 }}
+              stroke={border}
+              tick={{ fill: textSecondary, fontSize: compact ? 9 : 11 }}
               width={compact ? 36 : 48}
               domain={["auto", "auto"]}
             />
             {!compact && (
               <Tooltip
                 contentStyle={{
-                  background: "#0a0a0a",
-                  border: "1px solid #1a1a1a",
+                  background: surface2,
+                  border: `1px solid ${border}`,
                   fontFamily: "inherit",
                   fontSize: 12,
                 }}
-                labelStyle={{ color: "#888" }}
-                itemStyle={{ color: colour }}
+                labelStyle={{ color: textSecondary }}
+                itemStyle={{ color: chartLine }}
                 labelFormatter={(label) => formatTooltipTime(String(label))}
                 formatter={(value) => [
                   typeof value === "number" ? value.toFixed(2) : String(value),
@@ -339,7 +365,7 @@ export function TimeSeriesChart({
             )}
 
             {showBands &&
-              segments.map((seg, i) =>
+              segments.map((seg) =>
                 seg.bounds ? (
                   <ReferenceArea
                     key={`band-${seg.id}`}
@@ -347,12 +373,7 @@ export function TimeSeriesChart({
                     x2={seg.endAt}
                     y1={seg.bounds.min}
                     y2={seg.bounds.max}
-                    fill={
-                      seg.scoringSemantic === "restraint"
-                        ? "#FF8A00"
-                        : SEGMENT_COLOURS[i % SEGMENT_COLOURS.length]
-                    }
-                    fillOpacity={0.08}
+                    fill={chartBand}
                     strokeOpacity={0}
                   />
                 ) : null,
@@ -362,12 +383,7 @@ export function TimeSeriesChart({
               <ReferenceArea
                 y1={singleBounds.min}
                 y2={singleBounds.max}
-                fill={
-                  segments[0]?.scoringSemantic === "restraint"
-                    ? "#FF8A00"
-                    : "#2DB500"
-                }
-                fillOpacity={0.08}
+                fill={chartBand}
                 strokeOpacity={0}
               />
             )}
@@ -379,8 +395,8 @@ export function TimeSeriesChart({
                 dataKey={key}
                 stroke={
                   multiSegment
-                    ? SEGMENT_COLOURS[i % SEGMENT_COLOURS.length]
-                    : colour
+                    ? segmentColours[i % segmentColours.length]
+                    : chartLine
                 }
                 strokeWidth={compact ? 1.25 : 1.75}
                 dot={false}

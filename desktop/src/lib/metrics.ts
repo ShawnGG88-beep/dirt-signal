@@ -69,12 +69,17 @@ export const METRIC_BOUNDS: Partial<Record<MetricKey, MetricBounds>> = {
   ambient_humidity_pct: { min: HUMIDITY_MIN_PCT, max: HUMIDITY_MAX_PCT },
 };
 
+/**
+ * `colour` is a CSS custom-property name from tokens.css. Charts and
+ * sparklines use `--chart-line` / `--chart-band-fill` rather than per-metric
+ * hues; this field remains for any caller that still wants a token handle.
+ */
 export const METRICS: MetricDef[] = [
   {
     key: "moisture_pct",
     label: "Moisture",
     unit: "%",
-    colour: "#2DB500",
+    colour: "--chart-line",
     tier: "primary",
     bounds: METRIC_BOUNDS.moisture_pct ?? null,
   },
@@ -82,7 +87,7 @@ export const METRICS: MetricDef[] = [
     key: "ph",
     label: "pH",
     unit: "",
-    colour: "#107EEC",
+    colour: "--chart-line",
     tier: "primary",
     bounds: METRIC_BOUNDS.ph ?? null,
   },
@@ -90,7 +95,7 @@ export const METRICS: MetricDef[] = [
     key: "soil_temp_c",
     label: "Soil temp",
     unit: "°C",
-    colour: "#FF8A00",
+    colour: "--chart-line",
     tier: "primary",
     bounds: METRIC_BOUNDS.soil_temp_c ?? null,
   },
@@ -98,7 +103,7 @@ export const METRICS: MetricDef[] = [
     key: "ambient_temp_c",
     label: "Ambient temp",
     unit: "°C",
-    colour: "#107EEC",
+    colour: "--chart-line",
     tier: "context",
     // Day/night bounds applied per reading timestamp when the stage has them
     bounds: null,
@@ -107,7 +112,7 @@ export const METRICS: MetricDef[] = [
     key: "ambient_humidity_pct",
     label: "Humidity",
     unit: "%",
-    colour: "#2DB500",
+    colour: "--chart-line",
     tier: "context",
     bounds: METRIC_BOUNDS.ambient_humidity_pct ?? null,
   },
@@ -115,7 +120,7 @@ export const METRICS: MetricDef[] = [
     key: "vpd_kpa",
     label: "VPD",
     unit: "kPa",
-    colour: "#6B5B95",
+    colour: "--chart-line",
     tier: "context",
     bounds: null,
     derived: true,
@@ -124,7 +129,7 @@ export const METRICS: MetricDef[] = [
     key: "dew_point_c",
     label: "Dew point",
     unit: "°C",
-    colour: "#5B8FA8",
+    colour: "--chart-line",
     tier: "context",
     bounds: null,
     derived: true,
@@ -133,7 +138,7 @@ export const METRICS: MetricDef[] = [
     key: "moisture_raw",
     label: "Raw ADC",
     unit: "",
-    colour: "#FF8A00",
+    colour: "--chart-line",
     tier: "diagnostic",
     // Not a crop reference: display only in reports
     bounds: null,

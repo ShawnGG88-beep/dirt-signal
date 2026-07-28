@@ -40,9 +40,9 @@ const RULE_NOTES: Partial<Record<AlertRuleType, string>> = {
 };
 
 function severityColour(severity: AlertSeverity): string {
-  if (severity === "critical") return "#ff4444";
-  if (severity === "warning") return "#FF8A00";
-  return "#107EEC";
+  if (severity === "critical") return "var(--status-critical)";
+  if (severity === "warning") return "var(--status-warn)";
+  return "var(--accent-info)";
 }
 
 function formatWhen(iso: string): string {

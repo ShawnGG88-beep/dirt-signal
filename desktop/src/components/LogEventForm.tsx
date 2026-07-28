@@ -145,7 +145,7 @@ export function LogEventForm({
                   ? "event-type-tile event-type-tile-active"
                   : "event-type-tile"
               }
-              style={{ ["--event-colour" as string]: t.colour }}
+              style={{ ["--event-colour" as string]: `var(${t.colour})` }}
               onClick={() => setEventType(t.key)}
               title={t.label}
             >

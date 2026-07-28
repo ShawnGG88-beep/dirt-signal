@@ -1,10 +1,10 @@
+import { useToken } from "../lib/theme";
 import type { MetricBounds } from "../lib/metrics";
 
 interface SparklineProps {
   values: number[];
   width?: number;
   height?: number;
-  colour?: string;
   /** When set, shade the profile band behind the trace. */
   bounds?: MetricBounds | null;
 }
@@ -13,9 +13,12 @@ export function Sparkline({
   values,
   width = 120,
   height = 32,
-  colour = "#2DB500",
   bounds = null,
 }: SparklineProps) {
+  const chartLine = useToken("--chart-line");
+  const chartBand = useToken("--chart-band-fill");
+  const border = useToken("--border");
+
   if (values.length < 2) {
     return (
       <svg width={width} height={height} aria-hidden="true">
@@ -24,7 +27,7 @@ export function Sparkline({
           y1={height / 2}
           x2={width}
           y2={height / 2}
-          stroke="#333"
+          stroke={border}
           strokeWidth={1}
           strokeDasharray="4 4"
         />
@@ -67,13 +70,12 @@ export function Sparkline({
           y={bandRect.y}
           width={width}
           height={bandRect.h}
-          fill={colour}
-          opacity={0.12}
+          fill={chartBand}
         />
       )}
       <polyline
         fill="none"
-        stroke={colour}
+        stroke={chartLine}
         strokeWidth={1.5}
         points={points}
       />

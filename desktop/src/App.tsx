@@ -3,6 +3,7 @@ import { Alerts } from "./views/Alerts";
 import { Dashboard } from "./views/Dashboard";
 import { History } from "./views/History";
 import { Reports } from "./views/Reports";
+import { ThemeToggle } from "./components/ThemeToggle";
 import {
   formatHash,
   navViewFromRoute,
@@ -92,6 +93,7 @@ function App() {
               {item.label}
             </button>
           ))}
+          <ThemeToggle />
         </nav>
 
         {(route.view === "dashboard" || route.view === "metric") && (

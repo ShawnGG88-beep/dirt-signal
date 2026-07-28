@@ -239,7 +239,6 @@ export function MetricDetailModal({
             <TimeSeriesChart
               readings={readings}
               metricKey={metricKey}
-              colour={metric.colour}
               height={320}
               deviceCropType={deviceCropType}
               deviceLifecycleStage={deviceLifecycleStage}

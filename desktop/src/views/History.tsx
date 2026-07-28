@@ -214,7 +214,6 @@ export function History({
                 <TimeSeriesChart
                   readings={readings}
                   metricKey={metric.key}
-                  colour={metric.colour}
                   height={160}
                   compact
                   deviceCropType={cropType}
