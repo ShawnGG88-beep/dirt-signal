@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en-GB">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <title>Dirt Signal</title>
+    <meta name="description" content="Live soil and plant monitoring" />
+    <!-- Matches the dark "night soil" canvas token -->
+    <meta name="theme-color" content="#14140f" />
+    <link rel="icon" type="image/png" href="/icons/icon-192.png" />
+    <!-- Add to Home Screen (iOS) -->
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <meta name="apple-mobile-web-app-title" content="Dirt Signal" />
+    <script>
+      (function () {
+        try {
+          var pref = localStorage.getItem("dirt-signal-theme") || "system";
+          var resolved =
+            pref === "system"
+              ? window.matchMedia("(prefers-color-scheme: light)").matches
+                ? "light"
+                : "dark"
+              : pref;
+          document.documentElement.setAttribute("data-theme", resolved);
+          document.documentElement.setAttribute(
+            "data-theme-preference",
+            pref === "dark" || pref === "light" || pref === "system"
+              ? pref
+              : "system",
+          );
+          document.documentElement.style.colorScheme = resolved;
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
