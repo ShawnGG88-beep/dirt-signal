@@ -42,6 +42,18 @@ def _eval_interval() -> float:
     return float(max(5, value))
 
 
+def _row_collector_interval(device: dict[str, Any], fallback: float) -> float:
+    """Per-device cadence from the devices row, else the env fallback."""
+    raw = device.get("collector_interval_seconds")
+    try:
+        value = int(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        value = None
+    if value is None or value < 1:
+        return fallback
+    return float(value)
+
+
 def _parse_dt(raw: Any) -> datetime | None:
     if isinstance(raw, datetime):
         return ensure_utc(raw)
@@ -99,11 +111,7 @@ class AlertEngine:
         """Run one evaluation pass. Safe to call from POST /alerts/evaluate."""
         client = get_supabase()
         now = datetime.now(timezone.utc)
-        collector_interval = _collector_interval()
-        # Gap threshold: 2.5× collector cadence. Spec says gaps longer than the
-        # evaluation interval break streaks; with a 15-min collector that would
-        # make consecutive-N impossible, so we use collector cadence.
-        max_gap = max(_eval_interval(), collector_interval) * 2.5
+        env_interval = _collector_interval()
 
         devices = client.table("devices").select("*").execute().data or []
         rules = (
@@ -125,6 +133,14 @@ class AlertEngine:
             from day_night import default_device_timezone
 
             device_tz = str(device.get("timezone") or "").strip() or default_device_timezone()
+            # devices.collector_interval_seconds is the source of truth
+            # (migration 009); env is the fallback for pre-009 rows.
+            collector_interval = _row_collector_interval(device, env_interval)
+            # Gap threshold: 2.5x collector cadence. Spec says gaps longer
+            # than the evaluation interval break streaks; with a 15-min
+            # collector that would make consecutive-N impossible, so we use
+            # collector cadence.
+            max_gap = max(_eval_interval(), collector_interval) * 2.5
             applicable = [
                 r
                 for r in rules

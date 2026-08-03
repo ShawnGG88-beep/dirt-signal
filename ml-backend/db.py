@@ -27,13 +27,20 @@ def get_supabase() -> Client:
     return _client
 
 
-def _device_from_row(row: dict) -> dict[str, str | None]:
+def _device_from_row(row: dict) -> dict[str, str | int | None]:
     """Normalise a devices row; default crop/stage/timezone when absent."""
     from day_night import default_device_timezone
 
     tz = row.get("timezone")
     tz_str = str(tz).strip() if tz else ""
     season = row.get("season_start_date")
+    interval_raw = row.get("collector_interval_seconds")
+    try:
+        interval = int(interval_raw) if interval_raw is not None else None
+    except (TypeError, ValueError):
+        interval = None
+    if interval is not None and interval < 1:
+        interval = None
     return {
         "id": str(row["id"]),
         "name": str(row.get("name") or ""),
@@ -41,11 +48,14 @@ def _device_from_row(row: dict) -> dict[str, str | None]:
         "lifecycle_stage": str(row.get("lifecycle_stage") or "mature"),
         "timezone": tz_str or default_device_timezone(),
         "season_start_date": str(season) if season else None,
+        # None when the column is absent (pre-009) or invalid; callers fall
+        # back to COLLECTOR_INTERVAL_SECONDS, then 30.
+        "collector_interval_seconds": interval,
     }
 
 
-def resolve_device(device_name: str) -> dict[str, str | None]:
-    """Return id, name, crop_type, lifecycle_stage, timezone, season_start_date."""
+def resolve_device(device_name: str) -> dict[str, str | int | None]:
+    """Return id, name, crop/stage, timezone, season start and collector interval."""
     client = get_supabase()
     response = (
         client.table("devices")
@@ -60,8 +70,8 @@ def resolve_device(device_name: str) -> dict[str, str | None]:
     return _device_from_row(rows[0])
 
 
-def resolve_device_by_id(device_id: str) -> dict[str, str | None]:
-    """Return id, name, crop_type, lifecycle_stage, timezone, season_start_date."""
+def resolve_device_by_id(device_id: str) -> dict[str, str | int | None]:
+    """Return id, name, crop/stage, timezone, season start and collector interval."""
     client = get_supabase()
     response = (
         client.table("devices")
