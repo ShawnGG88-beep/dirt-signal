@@ -11,37 +11,39 @@ import {
   fetchHealth,
   fetchLatestReading,
   fetchReadingsRange,
+} from "../data/client";
+import {
   staleAfterMsFromInterval,
   type PlantEvent,
   type SensorReading,
-} from "../lib/api";
-import { BandPositionBar } from "@dirt-signal/shared";
-import { LogEventForm } from "@dirt-signal/shared";
-import { MetricDetailModal } from "@dirt-signal/shared";
-import { PlantProfileSection } from "@dirt-signal/shared";
-import { Sparkline } from "@dirt-signal/shared";
+} from "../data/types";
+import { BandPositionBar } from "../components/BandPositionBar";
+import { LogEventForm } from "../components/LogEventForm";
+import { MetricDetailModal } from "../components/MetricDetailModal";
+import { PlantProfileSection } from "../components/PlantProfileSection";
+import { Sparkline } from "../components/Sparkline";
 import {
   STATUS_GLYPH,
   STATUS_TEXT,
-} from "@dirt-signal/shared";
+} from "../components/StatusIndicator";
 import {
   formatRelativeAge,
   SystemStatusLine,
-} from "@dirt-signal/shared";
-import { DEFAULT_DEVICE_TIMEZONE } from "@dirt-signal/shared";
+} from "../components/SystemStatusLine";
+import { DEFAULT_DEVICE_TIMEZONE } from "../lib/dayNight";
 import {
   dewPointC,
   projectDrydown,
   vapourPressureDeficitKpa,
-} from "@dirt-signal/shared";
-import { eventTypeLabel } from "@dirt-signal/shared";
+} from "../lib/derived";
+import { eventTypeLabel } from "../lib/eventTypes";
 import {
   DEFAULT_CROP_TYPE,
   DEFAULT_LIFECYCLE_STAGE,
   getScoringSemantic,
   SAMPLING_LIMITATIONS,
   type ScoringSemantic,
-} from "@dirt-signal/shared";
+} from "../lib/growingConstants";
 import {
   formatMetricValue,
   getAmbientBoundsForProfile,
@@ -53,7 +55,7 @@ import {
   type MetricScore,
   type MetricStatus,
   type RangePreset,
-} from "@dirt-signal/shared";
+} from "../lib/metrics";
 import { useAlertPoll } from "../lib/useAlertPoll";
 
 const DEVICE_NAME = "pi-garden-01";

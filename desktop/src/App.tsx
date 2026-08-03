@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alerts } from "./views/Alerts";
-import { Dashboard } from "./views/Dashboard";
-import { History } from "./views/History";
-import { Reports } from "./views/Reports";
+import { Alerts, Dashboard, History, Reports } from "@dirt-signal/shared";
 import { ThemeToggle } from "@dirt-signal/shared";
 import {
   formatHash,
@@ -12,7 +9,7 @@ import {
   type AppView,
 } from "@dirt-signal/shared";
 import type { MetricKey, RangePreset } from "@dirt-signal/shared";
-import { AlertPollProvider } from "./lib/useAlertPoll";
+import { AlertPollProvider } from "@dirt-signal/shared";
 import "@dirt-signal/shared/styles/global.css";
 
 const NAV: { id: AppView; label: string }[] = [

@@ -1,6 +1,6 @@
 /** Tauri desktop notification helpers for promoted (notify=true) alerts. */
 
-import type { AlertEvent } from "./api";
+import type { AlertEvent, NotificationAdapter } from "@dirt-signal/shared";
 
 function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -55,3 +55,10 @@ export async function notifyAlert(alert: AlertEvent): Promise<boolean> {
     return false;
   }
 }
+
+/** Tauri implementation of the shared notification seam. */
+export const tauriNotificationAdapter: NotificationAdapter = {
+  isPermissionGranted: isNotificationPermissionGranted,
+  ensurePermission: ensureNotificationPermission,
+  notify: notifyAlert,
+};

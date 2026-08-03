@@ -3,18 +3,20 @@ import {
   fetchDailyAggregates,
   fetchEvents,
   fetchReadingsRange,
+} from "../data/client";
+import {
   HISTORY_FETCH_LIMIT,
   type DailyAggregateRow,
   type PlantEvent,
   type SensorReading,
-} from "../lib/api";
-import { buildDailySummaries } from "@dirt-signal/shared";
-import { DEFAULT_DEVICE_TIMEZONE, localDayKey } from "@dirt-signal/shared";
+} from "../data/types";
+import { buildDailySummaries } from "../lib/dailySummary";
+import { DEFAULT_DEVICE_TIMEZONE, localDayKey } from "../lib/dayNight";
 import {
   eventTypeColour,
   eventTypeGlyph,
   eventTypeLabel,
-} from "@dirt-signal/shared";
+} from "../lib/eventTypes";
 import {
   DEFAULT_CROP_TYPE,
   DEFAULT_LIFECYCLE_STAGE,
@@ -22,14 +24,14 @@ import {
   getScoringSemantic,
   isGrapeCrop,
   SAMPLING_LIMITATIONS,
-} from "@dirt-signal/shared";
+} from "../lib/growingConstants";
 import {
   formatMetricValue,
   rangeFromPreset,
   type RangePreset,
-} from "@dirt-signal/shared";
-import { ExportButton } from "@dirt-signal/shared";
-import { RangePicker } from "@dirt-signal/shared";
+} from "../lib/metrics";
+import { ExportButton } from "../components/ExportButton";
+import { RangePicker } from "../components/RangePicker";
 
 const DEVICE_NAME = "pi-garden-01";
 const VPD_LIMITATION = SAMPLING_LIMITATIONS[3];

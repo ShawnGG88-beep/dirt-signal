@@ -28,5 +28,12 @@ export * from "./lib/eventTypes";
 export * from "./lib/growingConstants";
 export * from "./lib/hashRoute";
 export * from "./lib/metrics";
+export * from "./lib/notifications";
 export * from "./lib/stats";
 export * from "./lib/theme";
+export * from "./lib/useAlertPoll";
+
+export * from "./views/Alerts";
+export * from "./views/Dashboard";
+export * from "./views/History";
+export * from "./views/Reports";

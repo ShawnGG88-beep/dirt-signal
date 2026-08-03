@@ -19,10 +19,12 @@ import {
   fetchAlertRules,
   fetchAlerts,
   markAlertNotified,
-  type AlertEvent,
-  type AlertRule,
-  type AlertSeverity,
-} from "./api";
+} from "../data/client";
+import type {
+  AlertEvent,
+  AlertRule,
+  AlertSeverity,
+} from "../data/types";
 import {
   ensureNotificationPermission,
   isNotificationPermissionGranted,
