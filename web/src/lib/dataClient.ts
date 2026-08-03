@@ -712,10 +712,16 @@ async function patchAlertRule(
   const patch: Record<string, unknown> = {};
   if (body.enabled !== undefined) patch.enabled = body.enabled;
   if (body.notify !== undefined) patch.notify = body.notify;
-  // params passes through unchanged; note the RLS column grants from
-  // migration 009 do not include params (no view edits it), so a params
-  // patch will be rejected by the database rather than silently dropped.
-  if (body.params !== undefined) patch.params = body.params;
+  // Deliberate: the migration 009 column grants exclude params because no
+  // view edits it. Rule tuning stays a desktop/sidecar concern (service
+  // role); reject here with a clear message instead of surfacing a cryptic
+  // Postgres permission error.
+  if (body.params !== undefined) {
+    throw new Error(
+      "Rule params are not editable from the web dashboard; " +
+        "adjust them via the desktop app's sidecar.",
+    );
+  }
   if (body.clear_snooze) {
     patch.snoozed_until = null;
   } else if (body.snoozed_until !== undefined) {
