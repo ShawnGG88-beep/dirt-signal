@@ -1,5 +1,5 @@
-import { useToken } from "../lib/theme";
-import type { MetricBounds } from "../lib/metrics";
+import { useToken } from "@dirt-signal/shared";
+import type { MetricBounds } from "@dirt-signal/shared";
 
 interface SparklineProps {
   values: number[];

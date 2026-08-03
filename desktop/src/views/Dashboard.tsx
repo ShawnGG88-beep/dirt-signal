@@ -28,20 +28,20 @@ import {
   formatRelativeAge,
   SystemStatusLine,
 } from "../components/SystemStatusLine";
-import { DEFAULT_DEVICE_TIMEZONE } from "../lib/dayNight";
+import { DEFAULT_DEVICE_TIMEZONE } from "@dirt-signal/shared";
 import {
   dewPointC,
   projectDrydown,
   vapourPressureDeficitKpa,
-} from "../lib/derived";
-import { eventTypeLabel } from "../lib/eventTypes";
+} from "@dirt-signal/shared";
+import { eventTypeLabel } from "@dirt-signal/shared";
 import {
   DEFAULT_CROP_TYPE,
   DEFAULT_LIFECYCLE_STAGE,
   getScoringSemantic,
   SAMPLING_LIMITATIONS,
   type ScoringSemantic,
-} from "../lib/growingConstants";
+} from "@dirt-signal/shared";
 import {
   formatMetricValue,
   getAmbientBoundsForProfile,
@@ -53,7 +53,7 @@ import {
   type MetricScore,
   type MetricStatus,
   type RangePreset,
-} from "../lib/metrics";
+} from "@dirt-signal/shared";
 import { useAlertPoll } from "../lib/useAlertPoll";
 
 const DEVICE_NAME = "pi-garden-01";

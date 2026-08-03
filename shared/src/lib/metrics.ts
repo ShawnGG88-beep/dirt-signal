@@ -1,4 +1,4 @@
-import type { SensorReading } from "./api";
+import type { SensorReading } from "../data/types";
 import {
   CROP_PROFILES,
   DEFAULT_CROP_TYPE,

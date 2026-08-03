@@ -1,9 +1,11 @@
 /*
  * Dirt Signal design tokens — the ONLY place hex/rgb colour literals may live
- * under desktop/src. Every other file must resolve colour through these custom
- * properties (or getToken() for APIs that cannot consume var()).
+ * under shared/src, desktop/src or web/src. Every other file must resolve
+ * colour through these custom properties (or getToken() for APIs that cannot
+ * consume var()).
  *
- * Invariant: `rg '#[0-9a-fA-F]{3,8}' desktop/src` matches this file alone.
+ * Invariant: `rg '#[0-9a-fA-F]{3,8}' shared/src desktop/src web/src` matches
+ * this file alone.
  */
 
 :root {

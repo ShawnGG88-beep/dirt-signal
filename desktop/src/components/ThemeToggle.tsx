@@ -2,7 +2,7 @@ import {
   cycleThemePreference,
   themePreferenceLabel,
   useThemePreference,
-} from "../lib/theme";
+} from "@dirt-signal/shared";
 
 /**
  * Cycles dark → light → system. Colours update via CSS custom properties;

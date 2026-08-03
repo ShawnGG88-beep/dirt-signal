@@ -4,7 +4,7 @@ import {
   eventQuantityApplicable,
   MANUAL_EVENT_TYPES,
   type PlantEventTypeKey,
-} from "../lib/eventTypes";
+} from "@dirt-signal/shared";
 
 interface LogEventFormProps {
   deviceName?: string;

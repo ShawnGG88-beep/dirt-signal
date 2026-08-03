@@ -1,4 +1,4 @@
-import type { MetricStatus } from "../lib/metrics";
+import type { MetricStatus } from "@dirt-signal/shared";
 
 interface StatusIndicatorProps {
   label: string;

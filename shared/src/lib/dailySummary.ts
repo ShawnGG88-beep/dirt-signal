@@ -1,4 +1,4 @@
-import type { SensorReading } from "./api";
+import type { SensorReading } from "../data/types";
 import {
   AMBIENT_TEMP_DAY_MAX_C,
   AMBIENT_TEMP_DAY_MIN_C,

@@ -10,7 +10,7 @@ import {
   MANUAL_EVENT_TYPES,
   PLANT_EVENT_TYPES,
   type PlantEventTypeKey,
-} from "../lib/eventTypes";
+} from "@dirt-signal/shared";
 
 interface EventDetailPopoverProps {
   events: PlantEvent[];

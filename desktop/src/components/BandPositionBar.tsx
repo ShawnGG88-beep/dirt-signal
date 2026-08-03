@@ -1,5 +1,5 @@
-import type { MetricBounds, MetricStatus } from "../lib/metrics";
-import type { ScoringSemantic } from "../lib/growingConstants";
+import type { MetricBounds, MetricStatus } from "@dirt-signal/shared";
+import type { ScoringSemantic } from "@dirt-signal/shared";
 
 interface BandPositionBarProps {
   bounds: MetricBounds | null;

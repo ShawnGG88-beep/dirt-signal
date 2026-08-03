@@ -1,4 +1,4 @@
-import type { AlertEvent, PlantEvent, SensorReading } from "./api";
+import type { AlertEvent, PlantEvent, SensorReading } from "../data/types";
 import { eventTypeLabel } from "./eventTypes";
 import { METRICS, readingMetricValue } from "./metrics";
 

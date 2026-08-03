@@ -10,10 +10,10 @@ import {
   parseHash,
   type AppRoute,
   type AppView,
-} from "./lib/hashRoute";
-import type { MetricKey, RangePreset } from "./lib/metrics";
+} from "@dirt-signal/shared";
+import type { MetricKey, RangePreset } from "@dirt-signal/shared";
 import { AlertPollProvider } from "./lib/useAlertPoll";
-import "./styles/global.css";
+import "@dirt-signal/shared/styles/global.css";
 
 const NAV: { id: AppView; label: string }[] = [
   { id: "dashboard", label: "Dashboard" },

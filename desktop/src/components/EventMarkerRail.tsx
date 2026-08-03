@@ -6,7 +6,7 @@ import {
   eventTypeLabel,
   PLANT_EVENT_TYPES,
   type PlantEventTypeKey,
-} from "../lib/eventTypes";
+} from "@dirt-signal/shared";
 import { EventDetailPopover } from "./EventDetailPopover";
 
 const CLUSTER_PX = 12;
