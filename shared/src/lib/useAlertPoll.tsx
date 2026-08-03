@@ -1,0 +1,176 @@
+/**
+ * App-level alert poll — single shared instance for notifications + open state.
+ *
+ * Mount AlertPollProvider once in App.tsx. Alerts view and SystemStatusLine
+ * consume the same state; only one interval runs regardless of consumers.
+ */
+
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  fetchAlertRules,
+  fetchAlerts,
+  markAlertNotified,
+} from "../data/client";
+import type {
+  AlertEvent,
+  AlertRule,
+  AlertSeverity,
+} from "../data/types";
+import { useSelectedDeviceName } from "./device";
+import {
+  ensureNotificationPermission,
+  isNotificationPermissionGranted,
+  notifyAlert,
+} from "./notifications";
+
+const POLL_MS = 30_000;
+
+interface AlertPollValue {
+  openAlerts: AlertEvent[];
+  /** Promoted (notify=true) open alerts — for Dashboard badge only. */
+  openNotifyAlerts: AlertEvent[];
+  openNotifyCount: number;
+  worstNotifySeverity: AlertSeverity | null;
+  rules: AlertRule[];
+  permissionDenied: boolean;
+  lastError: string | null;
+  refresh: () => Promise<void>;
+  requestPermission: () => Promise<boolean>;
+  setRules: (rules: AlertRule[]) => void;
+}
+
+const AlertPollContext = createContext<AlertPollValue | null>(null);
+
+async function deliverNotifications(alerts: AlertEvent[]): Promise<void> {
+  const granted = await isNotificationPermissionGranted();
+  if (!granted) return;
+  for (const alert of alerts) {
+    if (alert.rule_notify && !alert.acknowledged_at && !alert.notified) {
+      const sent = await notifyAlert(alert);
+      if (sent) {
+        await markAlertNotified(alert.id);
+      }
+    }
+  }
+}
+
+export function AlertPollProvider({ children }: { children: ReactNode }) {
+  const deviceName = useSelectedDeviceName();
+  const [openAlerts, setOpenAlerts] = useState<AlertEvent[]>([]);
+  const [rules, setRules] = useState<AlertRule[]>([]);
+  const [permissionDenied, setPermissionDenied] = useState(false);
+  const [lastError, setLastError] = useState<string | null>(null);
+  const mounted = useRef(true);
+
+  const refresh = useCallback(async () => {
+    try {
+      const [openRes, rulesRes] = await Promise.all([
+        fetchAlerts({ deviceName, status: "open" }),
+        fetchAlertRules(deviceName),
+      ]);
+      if (!mounted.current) return;
+      setOpenAlerts(openRes.alerts);
+      setRules(rulesRes.rules);
+      setLastError(null);
+      await deliverNotifications(openRes.alerts);
+      // Re-fetch open after mark-notified so notified flags stick in UI
+      const refreshed = await fetchAlerts({
+        deviceName,
+        status: "open",
+      });
+      if (mounted.current) setOpenAlerts(refreshed.alerts);
+    } catch (err) {
+      if (mounted.current) {
+        setLastError(err instanceof Error ? err.message : String(err));
+      }
+    }
+  }, [deviceName]);
+
+  // Each provider instance owns its interval and tears it down on unmount,
+  // so StrictMode's mount/unmount/mount cycle cannot leak or strand a timer.
+  // The provider is mounted once per app; a second mount would poll
+  // independently rather than corrupting shared module state.
+  useEffect(() => {
+    mounted.current = true;
+    void refresh();
+    const timer = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      void refresh();
+    }, POLL_MS);
+    function onVisibilityChange() {
+      if (!document.hidden) void refresh();
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      mounted.current = false;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [refresh]);
+
+  const requestPermission = useCallback(async () => {
+    const ok = await ensureNotificationPermission();
+    setPermissionDenied(!ok);
+    return ok;
+  }, []);
+
+  const openNotifyAlerts = useMemo(
+    () => openAlerts.filter((a) => a.rule_notify === true),
+    [openAlerts],
+  );
+
+  const worstNotifySeverity = useMemo(() => {
+    if (openNotifyAlerts.some((a) => a.severity === "critical")) return "critical";
+    if (openNotifyAlerts.some((a) => a.severity === "warning")) return "warning";
+    if (openNotifyAlerts.length > 0) return "info";
+    return null;
+  }, [openNotifyAlerts]);
+
+  const value = useMemo<AlertPollValue>(
+    () => ({
+      openAlerts,
+      openNotifyAlerts,
+      openNotifyCount: openNotifyAlerts.length,
+      worstNotifySeverity,
+      rules,
+      permissionDenied,
+      lastError,
+      refresh,
+      requestPermission,
+      setRules,
+    }),
+    [
+      openAlerts,
+      openNotifyAlerts,
+      worstNotifySeverity,
+      rules,
+      permissionDenied,
+      lastError,
+      refresh,
+      requestPermission,
+    ],
+  );
+
+  return (
+    <AlertPollContext.Provider value={value}>
+      {children}
+    </AlertPollContext.Provider>
+  );
+}
+
+export function useAlertPoll(): AlertPollValue {
+  const ctx = useContext(AlertPollContext);
+  if (!ctx) {
+    throw new Error("useAlertPoll must be used within AlertPollProvider");
+  }
+  return ctx;
+}

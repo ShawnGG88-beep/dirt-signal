@@ -1,0 +1,184 @@
+/*
+ * Web-only styles: login, device picker, offline banner and the two
+ * web-only views. Colours resolve through the shared tokens; the hex
+ * invariant in shared/src/styles/tokens.css spans this file too.
+ */
+
+/* —— Login —— */
+
+.login-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(1.5rem + env(safe-area-inset-top, 0px)) 1.5rem
+    calc(1.5rem + env(safe-area-inset-bottom, 0px));
+}
+
+.login-panel {
+  width: min(360px, 100%);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.login-subtitle {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.login-submit {
+  min-height: 44px;
+}
+
+/* —— Nav additions —— */
+
+.app-nav-spacer {
+  flex: 1;
+}
+
+.device-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.device-picker-select {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font: inherit;
+  padding: 0.35rem 0.5rem;
+  min-height: 34px;
+}
+
+@media (pointer: coarse) {
+  .device-picker-select {
+    min-height: 44px;
+  }
+}
+
+/* —— Offline state —— */
+
+.offline-banner {
+  border: 2px solid var(--status-critical);
+  background: var(--status-critical-muted);
+  color: var(--text-primary);
+  padding: 0.65rem 0.85rem;
+  margin-bottom: 0.85rem;
+  font-size: 0.85rem;
+}
+
+/* —— Soil tests —— */
+
+.soil-test-form {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  padding: 0.85rem;
+  margin: 1rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.soil-test-table td {
+  vertical-align: top;
+}
+
+/* —— Observations —— */
+
+.observations-note {
+  font-size: 0.78rem;
+  margin: 0.75rem 0;
+}
+
+.observations-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.75rem;
+}
+
+.observation-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+
+.observation-image {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  display: block;
+}
+
+.observation-image-missing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-disabled);
+  font-size: 0.8rem;
+}
+
+.observation-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.6rem 0.7rem 0.7rem;
+  font-size: 0.78rem;
+}
+
+.observation-when {
+  color: var(--text-primary);
+}
+
+.observation-light {
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+  padding: 0.05rem 0.4rem;
+  font-size: 0.72rem;
+}
+
+.observation-light-natural {
+  border-color: var(--status-ok);
+  color: var(--status-ok);
+}
+
+.observation-light-grow_light {
+  border-color: var(--status-watch);
+  color: var(--status-watch);
+}
+
+.observation-light-mixed {
+  border-color: var(--accent-info);
+  color: var(--accent-info);
+}
+
+.observation-ndvi,
+.observation-health {
+  color: var(--text-secondary);
+}
+
+.observation-notes {
+  width: 100%;
+  margin: 0.15rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+@media (max-width: 560px) {
+  .observations-grid {
+    grid-template-columns: 1fr;
+  }
+}

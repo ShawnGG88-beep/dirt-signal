@@ -6,11 +6,11 @@ import {
   setDataClient,
   setNotificationAdapter,
 } from "@dirt-signal/shared";
-import { sidecarDataClient } from "./lib/api";
-import { tauriNotificationAdapter } from "./lib/notifications";
+import { supabaseDataClient } from "./lib/dataClient";
+import { webNotificationAdapter } from "./lib/notifications";
 
-setDataClient(sidecarDataClient);
-setNotificationAdapter(tauriNotificationAdapter);
+setDataClient(supabaseDataClient);
+setNotificationAdapter(webNotificationAdapter);
 initTheme();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

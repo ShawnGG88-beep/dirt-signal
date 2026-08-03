@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from alerts.engine import start_alert_engine, stop_alert_engine
@@ -51,14 +51,18 @@ app.include_router(readings_router)
 app.include_router(soil_tests_router)
 app.include_router(alerts_router)
 
-# Mirror of pi-collector read_interval_seconds. Desktop derives STALE_AFTER_MS
-# as 2x this value. Override via COLLECTOR_INTERVAL_SECONDS when the Pi
-# interval changes; do not hardcode the Pi path here.
+# Collector cadence: devices.collector_interval_seconds is the source of
+# truth (migration 009) so desktop and web derive staleness from the same
+# row. COLLECTOR_INTERVAL_SECONDS remains a fallback for environments where
+# the column is absent or Supabase is unreachable; the final default is 30,
+# matching pi-collector/config.yaml. Desktop derives STALE_AFTER_MS as
+# 2x this value.
 _DEFAULT_COLLECTOR_INTERVAL_SECONDS = 30
 
+_DEFAULT_DEVICE = os.environ.get("DEFAULT_DEVICE_NAME", "pi-garden-01")
 
-@app.get("/health")
-def health() -> dict[str, str | int]:
+
+def _env_collector_interval() -> int:
     raw = os.environ.get("COLLECTOR_INTERVAL_SECONDS")
     try:
         interval = (
@@ -68,6 +72,32 @@ def health() -> dict[str, str | int]:
         interval = _DEFAULT_COLLECTOR_INTERVAL_SECONDS
     if interval < 1:
         interval = _DEFAULT_COLLECTOR_INTERVAL_SECONDS
+    return interval
+
+
+def _device_collector_interval(device_name: str) -> int | None:
+    """Interval from the devices row, or None so callers fall back to env.
+
+    /health doubles as the sidecar reachability probe, so a Supabase outage
+    must degrade to the fallback rather than turning the probe into a 500.
+    """
+    try:
+        from db import resolve_device
+
+        device = resolve_device(device_name)
+    except Exception:
+        return None
+    interval = device.get("collector_interval_seconds")
+    return interval if isinstance(interval, int) else None
+
+
+@app.get("/health")
+def health(
+    device_name: str = Query(default=_DEFAULT_DEVICE),
+) -> dict[str, str | int]:
+    interval = _device_collector_interval(device_name)
+    if interval is None:
+        interval = _env_collector_interval()
     return {
         "status": "ok",
         "collector_interval_seconds": interval,
