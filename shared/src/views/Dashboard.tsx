@@ -31,6 +31,7 @@ import {
   SystemStatusLine,
 } from "../components/SystemStatusLine";
 import { DEFAULT_DEVICE_TIMEZONE } from "../lib/dayNight";
+import { useSelectedDeviceName } from "../lib/device";
 import {
   dewPointC,
   projectDrydown,
@@ -58,7 +59,6 @@ import {
 } from "../lib/metrics";
 import { useAlertPoll } from "../lib/useAlertPoll";
 
-const DEVICE_NAME = "pi-garden-01";
 const POLL_MS = 30_000;
 const SPARK_WINDOW_LABEL = "6h";
 const VPD_LIMITATION = SAMPLING_LIMITATIONS[3];
@@ -383,6 +383,7 @@ export function Dashboard({
   onDetailRangeChange,
   onOpenHistory,
 }: DashboardProps) {
+  const deviceName = useSelectedDeviceName();
   const [reading, setReading] = useState<SensorReading | null>(null);
   const [history, setHistory] = useState<SensorReading[]>([]);
   const [recentEvents, setRecentEvents] = useState<PlantEvent[]>([]);
@@ -427,7 +428,7 @@ export function Dashboard({
       const range = await fetchReadingsRange(
         new Date(Date.now() - 6 * 60 * 60 * 1000),
         new Date(),
-        DEVICE_NAME,
+        deviceName,
         120,
       );
       setHistory(range.readings);
@@ -437,19 +438,19 @@ export function Dashboard({
         err instanceof Error ? err.message : "Failed to fetch range",
       );
     }
-  }, []);
+  }, [deviceName]);
 
   const refreshEvents = useCallback(async () => {
     try {
       const result = await fetchEvents({
-        deviceName: DEVICE_NAME,
+        deviceName,
         limit: 5,
       });
       setRecentEvents(result.events);
     } catch {
       // Keep prior list; events are orientation, not critical path.
     }
-  }, []);
+  }, [deviceName]);
 
   const refresh = useCallback(async () => {
     setFetching(true);
@@ -468,7 +469,7 @@ export function Dashboard({
       });
 
     // One latest-reading fetch per refresh, shared with the dry-down task.
-    const latestPromise = fetchLatestReading(DEVICE_NAME);
+    const latestPromise = fetchLatestReading(deviceName);
 
     const latestTask = latestPromise
       .then((latest) => {
@@ -489,7 +490,7 @@ export function Dashboard({
     const gddTask = fetchDailyAggregates(
       new Date(Date.now() - 90 * 24 * 60 * 60 * 1000),
       new Date(),
-      DEVICE_NAME,
+      deviceName,
     )
       .then((agg) => {
         setCumulativeGdd(agg.cumulative_gdd);
@@ -505,11 +506,11 @@ export function Dashboard({
       fetchReadingsRange(
         new Date(Date.now() - 72 * 60 * 60 * 1000),
         new Date(),
-        DEVICE_NAME,
+        deviceName,
         500,
       ),
       fetchEvents({
-        deviceName: DEVICE_NAME,
+        deviceName,
         fromAt: new Date(Date.now() - 72 * 60 * 60 * 1000),
         toAt: new Date(),
         limit: 200,
@@ -550,12 +551,25 @@ export function Dashboard({
     ]);
     setLastPollAt(new Date());
     setFetching(false);
-  }, [refreshRange, refreshEvents]);
+  }, [deviceName, refreshRange, refreshEvents]);
 
+  // Poll on an interval; pause while the tab is hidden and refetch as soon
+  // as it becomes visible again, so a backgrounded phone does not burn
+  // requests and a foregrounded one is immediately fresh.
   useEffect(() => {
     void refresh();
-    const timer = setInterval(() => void refresh(), POLL_MS);
-    return () => clearInterval(timer);
+    const timer = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      void refresh();
+    }, POLL_MS);
+    function onVisibilityChange() {
+      if (!document.hidden) void refresh();
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, [refresh, profileEpoch, eventsEpoch]);
 
   useEffect(() => {
@@ -675,7 +689,7 @@ export function Dashboard({
         <SystemStatusLine
           sidecarReachable={sidecarReachable}
           healthOk={healthOk}
-          deviceName={DEVICE_NAME}
+          deviceName={deviceName}
           readingAt={reading?.recorded_at ?? null}
           cropType={cropType}
           lifecycleStage={lifecycleStage}
@@ -865,7 +879,7 @@ export function Dashboard({
 
       {logEventOpen && (
         <LogEventForm
-          deviceName={DEVICE_NAME}
+          deviceName={deviceName}
           onClose={() => setLogEventOpen(false)}
           onSaved={() => {
             void refreshEvents();

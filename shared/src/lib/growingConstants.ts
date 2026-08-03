@@ -118,15 +118,22 @@ const TOMATO_MATURE: TomatoMatureStage = {
  */
 export const CROP_PROFILES: Record<
   string,
-  { gdd_base_c?: number; stages: Record<string, CropStageBase> }
+  {
+    /** Mirrors constants.py display_name; used for profile pickers. */
+    display_name?: string;
+    gdd_base_c?: number;
+    stages: Record<string, CropStageBase>;
+  }
 > = {
   tomato: {
+    display_name: "Tomato",
     gdd_base_c: 10,
     stages: {
       mature: TOMATO_MATURE,
     },
   },
   grape_wine: {
+    display_name: "Wine grape",
     gdd_base_c: 10,
     stages: {
       // Zhao et al. 2019: no significant variety differences in soil OM /
@@ -156,6 +163,7 @@ export const CROP_PROFILES: Record<
     },
   },
   grape_table: {
+    display_name: "Table grape",
     gdd_base_c: 10,
     stages: {
       mature: {

@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from "react";
+import { getDataSourceLabel } from "../data/client";
 import { DEFAULT_STALE_AFTER_MS } from "../data/types";
 
 export type SystemHealthState = "live" | "degraded" | "offline";
@@ -199,15 +200,15 @@ export function SystemStatusLine({
         >
           <dl className="system-status-dl">
             <div>
-              <dt>Sidecar</dt>
+              <dt>Data source</dt>
               <dd>
                 {sidecarReachable === null
-                  ? "checking…"
+                  ? `${getDataSourceLabel()}: checking…`
                   : sidecarReachable
                     ? healthOk
-                      ? "reachable (8731)"
-                      : "reachable, health not ok"
-                    : "unreachable"}
+                      ? `${getDataSourceLabel()}: reachable`
+                      : `${getDataSourceLabel()}: reachable, health not ok`
+                    : `${getDataSourceLabel()}: unreachable`}
               </dd>
             </div>
             <div>

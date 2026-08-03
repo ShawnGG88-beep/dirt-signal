@@ -58,6 +58,8 @@ export interface AlertRulePatch {
 }
 
 export interface DataClient {
+  /** Short human label for the data source, e.g. "sidecar (127.0.0.1:8731)". */
+  readonly sourceLabel?: string;
   fetchHealth(): Promise<HealthResponse>;
   fetchLatestReading(deviceName?: string): Promise<LatestReadingResponse>;
   fetchReadingsRange(
@@ -115,6 +117,11 @@ export function getDataClient(): DataClient {
 /** Whether the registered data source can trigger an evaluation pass. */
 export function dataClientSupportsEvaluate(): boolean {
   return typeof getDataClient().evaluateAlerts === "function";
+}
+
+/** Human label for status copy; safe before registration. */
+export function getDataSourceLabel(): string {
+  return activeClient?.sourceLabel ?? "data source";
 }
 
 // ---------------------------------------------------------------------------

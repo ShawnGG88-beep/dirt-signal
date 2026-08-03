@@ -12,6 +12,7 @@ import {
 } from "../data/types";
 import { buildDailySummaries } from "../lib/dailySummary";
 import { DEFAULT_DEVICE_TIMEZONE, localDayKey } from "../lib/dayNight";
+import { useSelectedDeviceName } from "../lib/device";
 import {
   eventTypeColour,
   eventTypeGlyph,
@@ -33,7 +34,6 @@ import {
 import { ExportButton } from "../components/ExportButton";
 import { RangePicker } from "../components/RangePicker";
 
-const DEVICE_NAME = "pi-garden-01";
 const VPD_LIMITATION = SAMPLING_LIMITATIONS[3];
 const HUMIDITY_LIMITATION = SAMPLING_LIMITATIONS[4];
 
@@ -106,6 +106,7 @@ export function Reports({
   range: preset,
   onRangeChange,
 }: ReportsProps) {
+  const deviceName = useSelectedDeviceName();
   const [readings, setReadings] = useState<SensorReading[]>([]);
   const [dailyRows, setDailyRows] = useState<DailyAggregateRow[]>([]);
   const [events, setEvents] = useState<PlantEvent[]>([]);
@@ -136,9 +137,9 @@ export function Reports({
       setLoading(true);
       try {
         const [aggregates, eventsResult, range] = await Promise.all([
-          fetchDailyAggregates(nextFrom, nextTo, DEVICE_NAME),
+          fetchDailyAggregates(nextFrom, nextTo, deviceName),
           fetchEvents({
-            deviceName: DEVICE_NAME,
+            deviceName,
             fromAt: nextFrom,
             toAt: nextTo,
             limit: 2000,
@@ -146,7 +147,7 @@ export function Reports({
           fetchReadingsRange(
             nextFrom,
             nextTo,
-            DEVICE_NAME,
+            deviceName,
             HISTORY_FETCH_LIMIT,
           ),
         ]);
@@ -184,7 +185,7 @@ export function Reports({
     return () => {
       cancelled = true;
     };
-  }, [preset, profileEpoch, eventsEpoch]);
+  }, [preset, profileEpoch, eventsEpoch, deviceName]);
 
   const metricSummaries = useMemo(
     () =>

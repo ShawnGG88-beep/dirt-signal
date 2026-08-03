@@ -16,6 +16,7 @@ import {
   SAMPLING_LIMITATIONS,
 } from "../lib/growingConstants";
 import { DEFAULT_DEVICE_TIMEZONE } from "../lib/dayNight";
+import { useSelectedDeviceName } from "../lib/device";
 import {
   loadAlertsFilter,
   loadEventFilter,
@@ -33,7 +34,6 @@ import { ExportButton } from "../components/ExportButton";
 import { RangePicker } from "../components/RangePicker";
 import { TimeSeriesChart } from "../components/TimeSeriesChart";
 
-const DEVICE_NAME = "pi-garden-01";
 const FILTER_VIEW = "history";
 
 interface HistoryProps {
@@ -51,6 +51,7 @@ export function History({
   onRangeChange,
   onEventsChanged,
 }: HistoryProps) {
+  const deviceName = useSelectedDeviceName();
   const [readings, setReadings] = useState<SensorReading[]>([]);
   const [events, setEvents] = useState<PlantEvent[]>([]);
   const [alerts, setAlerts] = useState<AlertEvent[]>([]);
@@ -73,13 +74,13 @@ export function History({
   const refreshEvents = useCallback(async (fromAt: Date, toAt: Date) => {
     const [eventsResult, alertsResult] = await Promise.all([
       fetchEvents({
-        deviceName: DEVICE_NAME,
+        deviceName,
         fromAt,
         toAt,
         limit: 2000,
       }),
       fetchAlerts({
-        deviceName: DEVICE_NAME,
+        deviceName,
         status: "all",
         fromAt,
         toAt,
@@ -88,7 +89,7 @@ export function History({
     ]);
     setEvents(eventsResult.events);
     setAlerts(alertsResult.alerts);
-  }, []);
+  }, [deviceName]);
 
   useEffect(() => {
     const { from: nextFrom, to: nextTo } = rangeFromPreset(preset);
@@ -103,17 +104,17 @@ export function History({
           fetchReadingsRange(
             nextFrom,
             nextTo,
-            DEVICE_NAME,
+            deviceName,
             HISTORY_FETCH_LIMIT,
           ),
           fetchEvents({
-            deviceName: DEVICE_NAME,
+            deviceName,
             fromAt: nextFrom,
             toAt: nextTo,
             limit: 2000,
           }),
           fetchAlerts({
-            deviceName: DEVICE_NAME,
+            deviceName,
             status: "all",
             fromAt: nextFrom,
             toAt: nextTo,
@@ -147,7 +148,7 @@ export function History({
     return () => {
       cancelled = true;
     };
-  }, [preset, profileEpoch, eventsEpoch]);
+  }, [preset, profileEpoch, eventsEpoch, deviceName]);
 
   function onFilterChange(next: Set<PlantEventTypeKey>) {
     setEnabledTypes(next);

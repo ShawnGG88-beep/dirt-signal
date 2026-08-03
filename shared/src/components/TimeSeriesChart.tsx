@@ -169,6 +169,17 @@ export function annotateProfileSegments(
   return { segments, points };
 }
 
+/**
+ * Touch devices have no hover, so compact charts (which hide the tooltip on
+ * desktop for density) show it there; Recharts tooltips respond to touch.
+ */
+function hasCoarsePointer(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    window.matchMedia("(pointer: coarse)").matches
+  );
+}
+
 const SEGMENT_TOKEN_NAMES = [
   "--chart-segment-1",
   "--chart-segment-2",
@@ -346,7 +357,7 @@ export function TimeSeriesChart({
               width={compact ? 36 : 48}
               domain={["auto", "auto"]}
             />
-            {!compact && (
+            {(!compact || hasCoarsePointer()) && (
               <Tooltip
                 contentStyle={{
                   background: surface2,

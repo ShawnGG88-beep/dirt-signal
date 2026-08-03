@@ -300,6 +300,7 @@ export async function evaluateAlerts(): Promise<AlertEvaluateResponse> {
 
 /** Sidecar implementation of the shared data-client seam. */
 export const sidecarDataClient: DataClient = {
+  sourceLabel: "sidecar (127.0.0.1:8731)",
   fetchHealth,
   fetchLatestReading,
   fetchReadingsRange,

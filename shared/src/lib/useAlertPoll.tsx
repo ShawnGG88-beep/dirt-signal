@@ -25,13 +25,13 @@ import type {
   AlertRule,
   AlertSeverity,
 } from "../data/types";
+import { useSelectedDeviceName } from "./device";
 import {
   ensureNotificationPermission,
   isNotificationPermissionGranted,
   notifyAlert,
 } from "./notifications";
 
-const DEVICE_NAME = "pi-garden-01";
 const POLL_MS = 30_000;
 
 interface AlertPollValue {
@@ -64,6 +64,7 @@ async function deliverNotifications(alerts: AlertEvent[]): Promise<void> {
 }
 
 export function AlertPollProvider({ children }: { children: ReactNode }) {
+  const deviceName = useSelectedDeviceName();
   const [openAlerts, setOpenAlerts] = useState<AlertEvent[]>([]);
   const [rules, setRules] = useState<AlertRule[]>([]);
   const [permissionDenied, setPermissionDenied] = useState(false);
@@ -73,8 +74,8 @@ export function AlertPollProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     try {
       const [openRes, rulesRes] = await Promise.all([
-        fetchAlerts({ deviceName: DEVICE_NAME, status: "open" }),
-        fetchAlertRules(DEVICE_NAME),
+        fetchAlerts({ deviceName, status: "open" }),
+        fetchAlertRules(deviceName),
       ]);
       if (!mounted.current) return;
       setOpenAlerts(openRes.alerts);
@@ -83,7 +84,7 @@ export function AlertPollProvider({ children }: { children: ReactNode }) {
       await deliverNotifications(openRes.alerts);
       // Re-fetch open after mark-notified so notified flags stick in UI
       const refreshed = await fetchAlerts({
-        deviceName: DEVICE_NAME,
+        deviceName,
         status: "open",
       });
       if (mounted.current) setOpenAlerts(refreshed.alerts);
@@ -92,7 +93,7 @@ export function AlertPollProvider({ children }: { children: ReactNode }) {
         setLastError(err instanceof Error ? err.message : String(err));
       }
     }
-  }, []);
+  }, [deviceName]);
 
   // Each provider instance owns its interval and tears it down on unmount,
   // so StrictMode's mount/unmount/mount cycle cannot leak or strand a timer.
@@ -102,11 +103,17 @@ export function AlertPollProvider({ children }: { children: ReactNode }) {
     mounted.current = true;
     void refresh();
     const timer = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
       void refresh();
     }, POLL_MS);
+    function onVisibilityChange() {
+      if (!document.hidden) void refresh();
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       mounted.current = false;
       window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [refresh]);
 

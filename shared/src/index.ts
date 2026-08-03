@@ -24,6 +24,7 @@ export * from "./lib/csv";
 export * from "./lib/dailySummary";
 export * from "./lib/dayNight";
 export * from "./lib/derived";
+export * from "./lib/device";
 export * from "./lib/eventTypes";
 export * from "./lib/growingConstants";
 export * from "./lib/hashRoute";

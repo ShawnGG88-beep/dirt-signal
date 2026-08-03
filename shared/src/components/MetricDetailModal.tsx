@@ -6,6 +6,7 @@ import {
   type SensorReading,
 } from "../data/types";
 import { DEFAULT_DEVICE_TIMEZONE } from "../lib/dayNight";
+import { useSelectedDeviceName } from "../lib/device";
 import {
   extractMetricValues,
   formatMetricValue,
@@ -25,7 +26,6 @@ import { ExportButton } from "./ExportButton";
 import { RangePicker } from "./RangePicker";
 import { TimeSeriesChart } from "./TimeSeriesChart";
 
-const DEVICE_NAME = "pi-garden-01";
 const FILTER_VIEW = "metric-detail";
 
 const TREND_LABEL: Record<TrendDirection, string> = {
@@ -71,6 +71,7 @@ export function MetricDetailModal({
   eventsEpoch = 0,
   onEventsChanged,
 }: MetricDetailModalProps) {
+  const deviceName = useSelectedDeviceName();
   const metric = getMetric(metricKey);
   const [readings, setReadings] = useState<SensorReading[]>([]);
   const [events, setEvents] = useState<PlantEvent[]>([]);
@@ -86,13 +87,13 @@ export function MetricDetailModal({
 
   const refreshEvents = useCallback(async (fromAt: Date, toAt: Date) => {
     const result = await fetchEvents({
-      deviceName: DEVICE_NAME,
+      deviceName,
       fromAt,
       toAt,
       limit: 2000,
     });
     setEvents(result.events);
-  }, []);
+  }, [deviceName]);
 
   useEffect(() => {
     const panel = panelRef.current;
@@ -115,11 +116,11 @@ export function MetricDetailModal({
           fetchReadingsRange(
             nextFrom,
             nextTo,
-            DEVICE_NAME,
+            deviceName,
             HISTORY_FETCH_LIMIT,
           ),
           fetchEvents({
-            deviceName: DEVICE_NAME,
+            deviceName,
             fromAt: nextFrom,
             toAt: nextTo,
             limit: 2000,
@@ -146,7 +147,7 @@ export function MetricDetailModal({
     return () => {
       cancelled = true;
     };
-  }, [preset, eventsEpoch]);
+  }, [preset, eventsEpoch, deviceName]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {

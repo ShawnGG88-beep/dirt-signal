@@ -307,7 +307,7 @@ export function PlantProfileSection({
 
       {!deviceId && (
 
-        <p className="view-status">Waiting for device id from sidecar…</p>
+        <p className="view-status">Waiting for device id from the data source…</p>
 
       )}
 

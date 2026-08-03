@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   acknowledgeAlert,
+  dataClientSupportsEvaluate,
   evaluateAlerts,
   fetchAlerts,
   patchAlertRule,
@@ -12,13 +13,13 @@ import type {
   AlertSeverity,
 } from "../data/types";
 import { alertsToCsv, downloadCsv } from "../lib/csv";
+import { useSelectedDeviceName } from "../lib/device";
 import { rangeFromPreset, type RangePreset } from "../lib/metrics";
 import { useAlertPoll } from "../lib/useAlertPoll";
 import { LogEventForm } from "../components/LogEventForm";
 import { RangePicker } from "../components/RangePicker";
 import type { PlantEventTypeKey } from "../lib/eventTypes";
 
-const DEVICE_NAME = "pi-garden-01";
 const HIGH_FIRE_CAUTION = 14;
 
 const RULE_LABELS: Record<AlertRuleType, string> = {
@@ -76,6 +77,7 @@ function eventTypeForAlert(alert: AlertEvent): PlantEventTypeKey {
 }
 
 export function Alerts() {
+  const deviceName = useSelectedDeviceName();
   const {
     openAlerts,
     rules,
@@ -105,7 +107,7 @@ export function Alerts() {
     const { from, to } = rangeFromPreset(historyRange);
     try {
       const allRes = await fetchAlerts({
-        deviceName: DEVICE_NAME,
+        deviceName,
         status: "all",
         fromAt: from,
         toAt: to,
@@ -118,7 +120,7 @@ export function Alerts() {
     } finally {
       setLoading(false);
     }
-  }, [historyRange]);
+  }, [historyRange, deviceName]);
 
   useEffect(() => {
     void loadHistory();
@@ -203,18 +205,25 @@ export function Alerts() {
   }
 
   const { from: histFrom, to: histTo } = rangeFromPreset(historyRange);
+  const canEvaluate = dataClientSupportsEvaluate();
 
   return (
     <section className="alerts-view">
       <header className="alerts-header">
         <div>
           <h1>Alerts</h1>
-          <p className="subtitle">In-app rule evaluation and firing history</p>
+          <p className="subtitle">
+            {canEvaluate
+              ? "In-app rule evaluation and firing history"
+              : "Recorded firings and rule management"}
+          </p>
         </div>
         <div className="alerts-header-actions">
-          <button type="button" className="btn-secondary" onClick={() => void onEvaluate()}>
-            Evaluate now
-          </button>
+          {canEvaluate && (
+            <button type="button" className="btn-secondary" onClick={() => void onEvaluate()}>
+              Evaluate now
+            </button>
+          )}
           <button
             type="button"
             className="btn-secondary"
@@ -228,14 +237,25 @@ export function Alerts() {
         </div>
       </header>
 
-      <aside className="alerts-honesty" role="note">
-        <strong>Coverage limit.</strong> Alerts are evaluated only while this
-        desktop app (and its sidecar) is running. Nothing fires while the app is
-        closed. A frost overnight with the laptop shut will be recorded on next
-        launch but will not notify in time to act. This is an in-app alerting
-        layer, not a monitoring service. Continuous coverage (sidecar-as-service
-        or evaluation on the collector) is future work.
-      </aside>
+      {canEvaluate ? (
+        <aside className="alerts-honesty" role="note">
+          <strong>Coverage limit.</strong> Alerts are evaluated only while this
+          desktop app (and its sidecar) is running. Nothing fires while the app is
+          closed. A frost overnight with the laptop shut will be recorded on next
+          launch but will not notify in time to act. This is an in-app alerting
+          layer, not a monitoring service. Continuous coverage (sidecar-as-service
+          or evaluation on the collector) is future work.
+        </aside>
+      ) : (
+        <aside className="alerts-honesty alerts-honesty-critical" role="alert">
+          <strong>No evaluation runs here.</strong> Alert rules are evaluated by
+          the desktop app&apos;s sidecar, and only while that app is open on the
+          laptop. This dashboard shows recorded firings and lets you acknowledge
+          alerts and manage rules, but it cannot detect new conditions on its
+          own. If the desktop app is closed, nothing is watching the sensors.
+          Continuous coverage is future work.
+        </aside>
+      )}
 
       {(error || lastError) && (
         <p className="error-text">{error || lastError}</p>
@@ -496,7 +516,7 @@ export function Alerts() {
 
       {prefillEvent && (
         <LogEventForm
-          deviceName={DEVICE_NAME}
+          deviceName={deviceName}
           initialEventType={prefillEvent.type}
           initialNote={prefillEvent.note}
           onClose={() => setPrefillEvent(null)}

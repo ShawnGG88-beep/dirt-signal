@@ -9,7 +9,13 @@ import {
 } from "../lib/eventTypes";
 import { EventDetailPopover } from "./EventDetailPopover";
 
-const CLUSTER_PX = 12;
+// Touch pointers get a wider merge radius so the enlarged (44px) tap
+// targets of neighbouring markers cannot overlap.
+const CLUSTER_PX =
+  typeof window !== "undefined" &&
+  window.matchMedia("(pointer: coarse)").matches
+    ? 44
+    : 12;
 
 export const ALERT_FILTER_KEY = "alert_open" as const;
 

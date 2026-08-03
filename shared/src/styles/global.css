@@ -2122,3 +2122,120 @@ body {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
+
+/* ---------------------------------------------------------------------------
+ * Web coverage-honesty variant: evaluation does not run in this app, so the
+ * note must be unmissable rather than a footnote.
+ * ------------------------------------------------------------------------- */
+.alerts-honesty-critical {
+  border: 2px solid var(--status-critical);
+  background: var(--status-critical-muted);
+  font-size: 0.9rem;
+}
+
+/* ---------------------------------------------------------------------------
+ * Touch and small-screen support (phones and narrow desktop windows).
+ * Breakpoint matches the existing 560px rule; do not invent new ones.
+ * ------------------------------------------------------------------------- */
+
+/* Safe-area insets: evaluate to 0 outside notched standalone displays. */
+.app {
+  padding: calc(1.5rem + env(safe-area-inset-top, 0px))
+    calc(1.5rem + env(safe-area-inset-right, 0px))
+    calc(1.5rem + env(safe-area-inset-bottom, 0px))
+    calc(1.5rem + env(safe-area-inset-left, 0px));
+}
+
+@media (pointer: coarse) {
+  /* Minimum 44px tap targets. */
+  .app-nav-btn,
+  .range-picker-btn,
+  .refresh-btn,
+  .export-btn,
+  .btn-primary,
+  .btn-secondary,
+  .log-event-btn,
+  .link-btn,
+  .theme-toggle,
+  .event-filter-chip,
+  .event-type-tile,
+  .diagnostics-toggle,
+  .system-status-expand,
+  .system-status-profile-chip,
+  .system-status-alert-badge,
+  .recent-event-link,
+  .event-popover-item,
+  .event-popover-close,
+  .metric-inline-retry,
+  .plant-profile-select,
+  .form-field input,
+  .form-field select,
+  .form-field textarea,
+  .alerts-ack-row input {
+    min-height: 44px;
+  }
+
+  /* Event rail markers: full-size hit areas on a taller track. The marker
+     clustering radius widens to 44px on coarse pointers (EventMarkerRail)
+     so neighbouring targets cannot overlap. */
+  .event-rail-track {
+    height: 44px;
+  }
+  .event-rail-marker {
+    width: 44px;
+    height: 44px;
+    top: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  .app {
+    padding: calc(0.85rem + env(safe-area-inset-top, 0px))
+      calc(0.85rem + env(safe-area-inset-right, 0px))
+      calc(0.85rem + env(safe-area-inset-bottom, 0px))
+      calc(0.85rem + env(safe-area-inset-left, 0px));
+  }
+
+  .app-nav {
+    flex-wrap: wrap;
+    row-gap: 0.25rem;
+  }
+
+  /* Single-column stacks. */
+  .metrics-primary,
+  .metrics-context,
+  .history-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-header,
+  .view-header,
+  .alerts-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .reports-season-dl > div {
+    grid-template-columns: 1fr;
+    gap: 0.15rem;
+  }
+
+  /* Modals go full screen; content scrolls inside, never the page. */
+  .modal-backdrop {
+    padding: 0;
+    align-items: stretch;
+  }
+  .modal-panel {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    padding: 0.85rem 0.85rem calc(0.85rem + env(safe-area-inset-bottom, 0px));
+  }
+  .profile-drawer {
+    width: 100%;
+  }
+}
