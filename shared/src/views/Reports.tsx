@@ -485,7 +485,7 @@ export function Reports({
         <p>
           Bounds from <code>ml-backend/constants.py</code>{" "}
           <code>CROP_PROFILES</code> (mirrored in{" "}
-          <code>src/lib/growingConstants.ts</code>). Profile: {cropType}/
+          <code>shared/src/lib/growingConstants.ts</code>). Profile: {cropType}/
           {lifecycleStage}. Metrics without a band for this profile show raw
           values only. Ambient uses day (06:00-18:00) and night ranges
           separately when the stage defines them. N/P/K estimates are shown

@@ -3,8 +3,13 @@
 Reference for the in-app telemetry UI: live Dashboard, History, Reports, Alerts,
 readings, plant events, alert rules, plant profile, and how status scoring works.
 
-The desktop app is a Tauri shell with a React frontend. Navigation uses **hash
-routes** (shareable, deep-linkable):
+The desktop app is a Tauri shell with a React frontend. Since the
+`@dirt-signal/shared` extraction, the views, components, tokens and pure
+logic live in `shared/src` and are consumed by both the desktop app and the
+web dashboard (`web/`, see `web/README.md`); each app supplies its own data
+client behind `shared/src/data/client.ts` (desktop: FastAPI sidecar; web:
+Supabase directly). Navigation uses **hash routes** (shareable,
+deep-linkable):
 
 | Hash | View |
 |------|------|
@@ -14,7 +19,8 @@ routes** (shareable, deep-linkable):
 | `#/alerts` | Alerts |
 | `#/metric/{slug}?range=6h` | Metric detail modal (Dashboard chrome) |
 
-Implementation: `desktop/src/lib/hashRoute.ts`, wired in `desktop/src/App.tsx`.
+Implementation: `shared/src/lib/hashRoute.ts`, wired in `desktop/src/App.tsx`
+(web adds `#/soil-tests` and `#/observations` via `web/src/lib/webRoute.ts`).
 
 ```
 Pi collector  →  Supabase (Postgres)
@@ -24,8 +30,9 @@ Tauri + React  ←  FastAPI sidecar (:8731)
                      └─ alert engine (background eval ~60s)
 ```
 
-Default device: `pi-garden-01` (hardcoded in the views today). API base:
-`http://127.0.0.1:8731`.
+Default device: `pi-garden-01` via the selected-device store
+(`shared/src/lib/device.ts`); the web app renders a picker, desktop stays on
+the default. Desktop API base: `http://127.0.0.1:8731`.
 
 ---
 
@@ -59,9 +66,11 @@ is a hash route (`#/metric/…`) overlaid on Dashboard, not a separate nav tab.
 Also shows device name, reading age, last poll age, and crop/stage (opens the
 profile drawer).
 
-**Staleness:** derived from `GET /health` → `collector_interval_seconds` as
-**2× interval**. Falls back to **30 minutes** when the field is absent
-(`staleAfterMsFromInterval` in `desktop/src/lib/api.ts`).
+**Staleness:** derived from `collector_interval_seconds` as **2× interval**;
+the source of truth is `devices.collector_interval_seconds` (migration 009),
+read via `GET /health` on desktop and directly on web. Falls back to
+**30 minutes** when the field is absent (`staleAfterMsFromInterval` in
+`shared/src/data/types.ts`).
 
 ### Log event
 
@@ -72,7 +81,7 @@ keeps the form open. No confirmation dialog — PATCH/DELETE correct mistakes.
 
 ### Metric layout (primary / context / diagnostics)
 
-Metrics are tiered in `METRICS` (`desktop/src/lib/metrics.ts`):
+Metrics are tiered in `METRICS` (`shared/src/lib/metrics.ts`):
 
 | Tier | Metrics | Card behaviour |
 |------|---------|----------------|
@@ -139,7 +148,7 @@ always-visible section).
 - After save, Dashboard reloads and History/Reports refetch
 
 Crop/stage bounds come from `ml-backend/constants.py` `CROP_PROFILES`, mirrored
-in `desktop/src/lib/growingConstants.ts`.
+in `shared/src/lib/growingConstants.ts`.
 
 ---
 
@@ -166,7 +175,7 @@ Index: `(device_id, occurred_at desc)`. Migration:
 ### Event types
 
 Source of truth: `ml-backend/constants.py` `PLANT_EVENT_TYPES`.
-Mirror: `desktop/src/lib/eventTypes.ts`.
+Mirror: `shared/src/lib/eventTypes.ts`.
 
 Notable separations:
 
@@ -268,8 +277,14 @@ only when the clear condition is met (hysteresis / clear streak).
 - Open firings with severity, message, ack UI
 - Rules list: enable/disable, promote/demote notify, snooze 6h / clear snooze
 - History of recent firings
-- Poll every 30s; delivers OS notifications for promoted, unacked, not-yet-notified
-  alerts via `desktop/src/lib/notifications.ts` (requests permission on load)
+- Poll every 30s; delivers notifications for promoted, unacked,
+  not-yet-notified alerts via the notification seam
+  (`shared/src/lib/notifications.ts`; Tauri adapter in
+  `desktop/src/lib/notifications.ts`, Web Notifications adapter in
+  `web/src/lib/notifications.ts`)
+- Web shows recorded firings and rule management only: evaluation runs in
+  the sidecar, so the web view suppresses "Evaluate now" and carries a
+  prominent coverage note
 
 ---
 
@@ -307,7 +322,9 @@ and served by the sidecar.
 | `GET /devices/{id}/profile-options` | Crop/stage dropdowns |
 | `PATCH /devices/{id}/profile` | Save plant profile (+ auto `stage_change` event) |
 
-Client: `desktop/src/lib/api.ts`
+Clients: seam in `shared/src/data/client.ts`; sidecar implementation in
+`desktop/src/lib/api.ts`; Supabase implementation in
+`web/src/lib/dataClient.ts`
 
 - Dashboard range limit: **120**
 - History / Reports / detail modal: up to **5000** (`HISTORY_FETCH_LIMIT`)
@@ -331,7 +348,7 @@ Small-multiples layout: one panel per metric for the same time window.
 - Shared range picker, event type filter, and CSV export
 - Charts via `TimeSeriesChart` (Recharts), with optional profile-band overlays,
   profile segmentation, and event marker rails
-- Metrics list from `METRICS` in `desktop/src/lib/metrics.ts`
+- Metrics list from `METRICS` in `shared/src/lib/metrics.ts`
 
 Use History when you want trend shape across metrics, not a single live snapshot.
 
@@ -340,7 +357,7 @@ Use History when you want trend shape across metrics, not a single live snapshot
 ## Reports
 
 Daily digests built client-side from the fetched range (`buildDailySummaries` in
-`desktop/src/lib/dailySummary.ts`).
+`shared/src/lib/dailySummary.ts`).
 
 ### What each day shows
 
@@ -416,16 +433,21 @@ section is appended. Useful for offline spreadsheet review or calibration notes.
 
 ## Not on the dashboard yet
 
-These exist in the plan, collector, or API but are **not** fully productised in
-the desktop UI today:
+These exist in the plan, collector, or API but are **not** fully productised
+in the desktop UI today (some now exist on web only):
 
-- **Soil Tests** view (API `POST /soil-tests` exists)
+- **Soil Tests** view: web only (`web/src/views/SoilTests.tsx`); desktop has
+  the `POST /soil-tests` API but no UI
 - **Model** view (ML train/predict still stubs)
-- Camera / plant observation images on the Dashboard
-- Multi-device picker (still hardcoded `pi-garden-01`)
-- Auth / multi-user
-- Configurable API base URL (still `127.0.0.1:8731`)
-- Always-on alert evaluation when the desktop app is closed
+- Plant observation images: web has a metadata gallery
+  (`web/src/views/Observations.tsx`), but captures stay on the Pi until the
+  Supabase Storage upload ships, so previews show "Image not uploaded"
+- Multi-device picker: web only; desktop stays on the default device
+- Auth: web only (single Supabase Auth user); desktop trusts its local
+  sidecar
+- Configurable API base URL on desktop (still `127.0.0.1:8731`)
+- Always-on alert evaluation when the desktop app is closed (the web
+  dashboard displays and manages alerts but never evaluates)
 
 ---
 
@@ -433,24 +455,36 @@ the desktop UI today:
 
 | Concern | Path |
 |---------|------|
-| App shell / hash nav | `desktop/src/App.tsx`, `desktop/src/lib/hashRoute.ts` |
-| Live Dashboard | `desktop/src/views/Dashboard.tsx` |
-| History | `desktop/src/views/History.tsx` |
-| Reports | `desktop/src/views/Reports.tsx` |
-| Alerts | `desktop/src/views/Alerts.tsx` |
-| API client + reading/event/alert types | `desktop/src/lib/api.ts` |
-| Event type constants (frontend) | `desktop/src/lib/eventTypes.ts` |
-| Bounds / metrics / tiers / ranges | `desktop/src/lib/metrics.ts` |
-| Crop profiles (frontend) | `desktop/src/lib/growingConstants.ts` |
-| Daily report aggregation | `desktop/src/lib/dailySummary.ts` |
-| OS notifications | `desktop/src/lib/notifications.ts` |
-| System status line | `desktop/src/components/SystemStatusLine.tsx` |
-| Band position bar | `desktop/src/components/BandPositionBar.tsx` |
-| Log event form | `desktop/src/components/LogEventForm.tsx` |
-| Event marker rail / filter | `desktop/src/components/EventMarkerRail.tsx` |
-| Event detail / edit | `desktop/src/components/EventDetailPopover.tsx` |
-| Plant profile UI | `desktop/src/components/PlantProfileSection.tsx` |
-| Detail modal | `desktop/src/components/MetricDetailModal.tsx` |
+| Desktop app shell | `desktop/src/App.tsx`, `desktop/src/main.tsx` |
+| Web app shell / auth gate | `web/src/App.tsx`, `web/src/main.tsx` |
+| Hash routing | `shared/src/lib/hashRoute.ts` (+ `web/src/lib/webRoute.ts`) |
+| Live Dashboard | `shared/src/views/Dashboard.tsx` |
+| History | `shared/src/views/History.tsx` |
+| Reports | `shared/src/views/Reports.tsx` |
+| Alerts | `shared/src/views/Alerts.tsx` |
+| Soil tests (web only) | `web/src/views/SoilTests.tsx` |
+| Observations gallery (web only) | `web/src/views/Observations.tsx` |
+| Data-client seam | `shared/src/data/client.ts` |
+| Reading/event/alert types | `shared/src/data/types.ts` |
+| Sidecar client (desktop) | `desktop/src/lib/api.ts` |
+| Supabase client (web) | `web/src/lib/dataClient.ts`, `web/src/lib/supabaseClient.ts` |
+| Selected device store / picker | `shared/src/lib/device.ts`, `web/src/components/DevicePicker.tsx` |
+| Event type constants (frontend) | `shared/src/lib/eventTypes.ts` |
+| Bounds / metrics / tiers / ranges | `shared/src/lib/metrics.ts` |
+| Crop profiles (frontend) | `shared/src/lib/growingConstants.ts` |
+| Derived metrics (frontend) | `shared/src/lib/derived.ts` |
+| Daily report aggregation | `shared/src/lib/dailySummary.ts` |
+| Notification seam / adapters | `shared/src/lib/notifications.ts`, `desktop/src/lib/notifications.ts`, `web/src/lib/notifications.ts` |
+| Alert polling | `shared/src/lib/useAlertPoll.tsx` |
+| Theme + tokens | `shared/src/lib/theme.ts`, `shared/src/styles/tokens.css` |
+| System status line | `shared/src/components/SystemStatusLine.tsx` |
+| Band position bar | `shared/src/components/BandPositionBar.tsx` |
+| Log event form | `shared/src/components/LogEventForm.tsx` |
+| Event marker rail / filter | `shared/src/components/EventMarkerRail.tsx` |
+| Event detail / edit | `shared/src/components/EventDetailPopover.tsx` |
+| Plant profile UI | `shared/src/components/PlantProfileSection.tsx` |
+| Detail modal | `shared/src/components/MetricDetailModal.tsx` |
+| Cross-language parity fixtures | `shared/fixtures/` |
 | Readings API | `ml-backend/routes/readings.py` |
 | Events API | `ml-backend/routes/events.py` |
 | Alerts API | `ml-backend/routes/alerts.py` |
@@ -458,7 +492,7 @@ the desktop UI today:
 | Alert rule unit tests | `ml-backend/tests/test_alert_rules.py` |
 | Devices / profile API | `ml-backend/routes/devices.py` |
 | Crop + event type constants | `ml-backend/constants.py` |
-| Schema | `supabase/migrations/006_plant_events.sql`, `007_alert_rules_events.sql` |
+| Schema | `supabase/migrations/006_plant_events.sql`, `007_alert_rules_events.sql`, `009_web_auth_rls.sql` |
 
 ---
 
