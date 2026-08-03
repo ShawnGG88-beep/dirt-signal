@@ -50,10 +50,6 @@ interface AlertPollValue {
 
 const AlertPollContext = createContext<AlertPollValue | null>(null);
 
-let subscriberCount = 0;
-let sharedTimer: number | null = null;
-let sharedRefresh: (() => Promise<void>) | null = null;
-
 async function deliverNotifications(alerts: AlertEvent[]): Promise<void> {
   const granted = await isNotificationPermissionGranted();
   if (!granted) return;
@@ -98,25 +94,19 @@ export function AlertPollProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Each provider instance owns its interval and tears it down on unmount,
+  // so StrictMode's mount/unmount/mount cycle cannot leak or strand a timer.
+  // The provider is mounted once per app; a second mount would poll
+  // independently rather than corrupting shared module state.
   useEffect(() => {
     mounted.current = true;
-    sharedRefresh = refresh;
-    subscriberCount += 1;
     void refresh();
-    if (sharedTimer === null) {
-      sharedTimer = window.setInterval(() => {
-        void sharedRefresh?.();
-      }, POLL_MS);
-    }
+    const timer = window.setInterval(() => {
+      void refresh();
+    }, POLL_MS);
     return () => {
       mounted.current = false;
-      subscriberCount -= 1;
-      if (subscriberCount <= 0 && sharedTimer !== null) {
-        window.clearInterval(sharedTimer);
-        sharedTimer = null;
-        sharedRefresh = null;
-        subscriberCount = 0;
-      }
+      window.clearInterval(timer);
     };
   }, [refresh]);
 

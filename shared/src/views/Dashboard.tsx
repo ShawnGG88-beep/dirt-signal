@@ -467,7 +467,10 @@ export function Dashboard({
         setHealthOk(false);
       });
 
-    const latestTask = fetchLatestReading(DEVICE_NAME)
+    // One latest-reading fetch per refresh, shared with the dry-down task.
+    const latestPromise = fetchLatestReading(DEVICE_NAME);
+
+    const latestTask = latestPromise
       .then((latest) => {
         setReading(latest.reading);
         setDeviceId(latest.device_id ?? latest.reading?.device_id ?? null);
@@ -511,7 +514,7 @@ export function Dashboard({
         toAt: new Date(),
         limit: 200,
       }),
-      fetchLatestReading(DEVICE_NAME),
+      latestPromise,
     ])
       .then(([range, eventsRes, latest]) => {
         const crop = latest.crop_type ?? DEFAULT_CROP_TYPE;
