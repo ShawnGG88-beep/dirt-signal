@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from "react";
-import { DEFAULT_STALE_AFTER_MS } from "../lib/api";
+import { DEFAULT_STALE_AFTER_MS } from "../data/types";
 
 export type SystemHealthState = "live" | "degraded" | "offline";
 

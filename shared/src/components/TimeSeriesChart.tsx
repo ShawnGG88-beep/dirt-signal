@@ -8,9 +8,9 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { AlertEvent, PlantEvent, SensorReading } from "../lib/api";
-import { getScoringSemantic } from "@dirt-signal/shared";
-import { DEFAULT_DEVICE_TIMEZONE } from "@dirt-signal/shared";
+import type { AlertEvent, PlantEvent, SensorReading } from "../data/types";
+import { getScoringSemantic } from "../lib/growingConstants";
+import { DEFAULT_DEVICE_TIMEZONE } from "../lib/dayNight";
 import {
   effectiveReadingProfile,
   getAmbientBoundsForProfile,
@@ -20,9 +20,9 @@ import {
   readingMetricValue,
   type MetricBounds,
   type MetricKey,
-} from "@dirt-signal/shared";
-import type { PlantEventTypeKey } from "@dirt-signal/shared";
-import { useTokens } from "@dirt-signal/shared";
+} from "../lib/metrics";
+import type { PlantEventTypeKey } from "../lib/eventTypes";
+import { useTokens } from "../lib/theme";
 import { EventMarkerRail } from "./EventMarkerRail";
 
 interface TimeSeriesChartProps {

@@ -15,19 +15,19 @@ import {
   type PlantEvent,
   type SensorReading,
 } from "../lib/api";
-import { BandPositionBar } from "../components/BandPositionBar";
-import { LogEventForm } from "../components/LogEventForm";
-import { MetricDetailModal } from "../components/MetricDetailModal";
-import { PlantProfileSection } from "../components/PlantProfileSection";
-import { Sparkline } from "../components/Sparkline";
+import { BandPositionBar } from "@dirt-signal/shared";
+import { LogEventForm } from "@dirt-signal/shared";
+import { MetricDetailModal } from "@dirt-signal/shared";
+import { PlantProfileSection } from "@dirt-signal/shared";
+import { Sparkline } from "@dirt-signal/shared";
 import {
   STATUS_GLYPH,
   STATUS_TEXT,
-} from "../components/StatusIndicator";
+} from "@dirt-signal/shared";
 import {
   formatRelativeAge,
   SystemStatusLine,
-} from "../components/SystemStatusLine";
+} from "@dirt-signal/shared";
 import { DEFAULT_DEVICE_TIMEZONE } from "@dirt-signal/shared";
 import {
   dewPointC,

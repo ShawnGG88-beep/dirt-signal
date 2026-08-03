@@ -3,7 +3,7 @@ import { Alerts } from "./views/Alerts";
 import { Dashboard } from "./views/Dashboard";
 import { History } from "./views/History";
 import { Reports } from "./views/Reports";
-import { ThemeToggle } from "./components/ThemeToggle";
+import { ThemeToggle } from "@dirt-signal/shared";
 import {
   formatHash,
   navViewFromRoute,

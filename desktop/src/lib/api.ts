@@ -6,6 +6,7 @@
 
 import type {
   AlertEvaluateResponse,
+  DataClient,
   AlertEvent,
   AlertEventsListResponse,
   AlertRule,
@@ -296,3 +297,23 @@ export async function evaluateAlerts(): Promise<AlertEvaluateResponse> {
     method: "POST",
   });
 }
+
+/** Sidecar implementation of the shared data-client seam. */
+export const sidecarDataClient: DataClient = {
+  fetchHealth,
+  fetchLatestReading,
+  fetchReadingsRange,
+  fetchDailyAggregates,
+  fetchProfileOptions,
+  patchDeviceProfile,
+  fetchEvents,
+  createEvent,
+  updateEvent,
+  deleteEvent,
+  fetchAlerts,
+  acknowledgeAlert,
+  markAlertNotified,
+  fetchAlertRules,
+  patchAlertRule,
+  evaluateAlerts,
+};

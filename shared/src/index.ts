@@ -4,6 +4,21 @@
  */
 
 export * from "./data/types";
+export * from "./data/client";
+
+export * from "./components/BandPositionBar";
+export * from "./components/EventDetailPopover";
+export * from "./components/EventMarkerRail";
+export * from "./components/ExportButton";
+export * from "./components/LogEventForm";
+export * from "./components/MetricDetailModal";
+export * from "./components/PlantProfileSection";
+export * from "./components/RangePicker";
+export * from "./components/Sparkline";
+export * from "./components/StatusIndicator";
+export * from "./components/SystemStatusLine";
+export * from "./components/ThemeToggle";
+export * from "./components/TimeSeriesChart";
 
 export * from "./lib/csv";
 export * from "./lib/dailySummary";

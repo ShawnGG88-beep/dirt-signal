@@ -1,16 +1,13 @@
 import { useEffect, useState } from "react";
-import {
-  deleteEvent,
-  updateEvent,
-  type PlantEvent,
-} from "../lib/api";
+import { deleteEvent, updateEvent } from "../data/client";
+import type { PlantEvent } from "../data/types";
 import {
   eventQuantityApplicable,
   eventTypeLabel,
   MANUAL_EVENT_TYPES,
   PLANT_EVENT_TYPES,
   type PlantEventTypeKey,
-} from "@dirt-signal/shared";
+} from "../lib/eventTypes";
 
 interface EventDetailPopoverProps {
   events: PlantEvent[];

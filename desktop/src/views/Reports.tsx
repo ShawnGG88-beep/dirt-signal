@@ -28,8 +28,8 @@ import {
   rangeFromPreset,
   type RangePreset,
 } from "@dirt-signal/shared";
-import { ExportButton } from "../components/ExportButton";
-import { RangePicker } from "../components/RangePicker";
+import { ExportButton } from "@dirt-signal/shared";
+import { RangePicker } from "@dirt-signal/shared";
 
 const DEVICE_NAME = "pi-garden-01";
 const VPD_LIMITATION = SAMPLING_LIMITATIONS[3];

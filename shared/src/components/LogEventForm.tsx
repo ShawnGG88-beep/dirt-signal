@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { createEvent, type PlantEvent } from "../lib/api";
+import { createEvent } from "../data/client";
+import type { PlantEvent } from "../data/types";
 import {
   eventQuantityApplicable,
   MANUAL_EVENT_TYPES,
   type PlantEventTypeKey,
-} from "@dirt-signal/shared";
+} from "../lib/eventTypes";
 
 interface LogEventFormProps {
   deviceName?: string;

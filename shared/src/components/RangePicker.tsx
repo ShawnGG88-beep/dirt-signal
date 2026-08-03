@@ -1,7 +1,7 @@
 import {
   RANGE_PRESETS,
   type RangePreset,
-} from "@dirt-signal/shared";
+} from "../lib/metrics";
 
 interface RangePickerProps {
   value: RangePreset;

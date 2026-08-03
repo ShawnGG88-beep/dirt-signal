@@ -1,14 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 
-import {
+import { fetchProfileOptions, patchDeviceProfile } from "../data/client";
 
-  fetchProfileOptions,
-
-  patchDeviceProfile,
-
-  type ProfileCropOption,
-
-} from "../lib/api";
+import type { ProfileCropOption } from "../data/types";
 
 
 

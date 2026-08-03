@@ -26,10 +26,10 @@ import {
   rangeFromPreset,
   type RangePreset,
 } from "@dirt-signal/shared";
-import { EventTypeFilter } from "../components/EventMarkerRail";
-import { ExportButton } from "../components/ExportButton";
-import { RangePicker } from "../components/RangePicker";
-import { TimeSeriesChart } from "../components/TimeSeriesChart";
+import { EventTypeFilter } from "@dirt-signal/shared";
+import { ExportButton } from "@dirt-signal/shared";
+import { RangePicker } from "@dirt-signal/shared";
+import { TimeSeriesChart } from "@dirt-signal/shared";
 
 const DEVICE_NAME = "pi-garden-01";
 const FILTER_VIEW = "history";

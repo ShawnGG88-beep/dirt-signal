@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { AlertEvent, PlantEvent } from "../lib/api";
+import type { AlertEvent, PlantEvent } from "../data/types";
 import {
   eventTypeColour,
   eventTypeGlyph,
   eventTypeLabel,
   PLANT_EVENT_TYPES,
   type PlantEventTypeKey,
-} from "@dirt-signal/shared";
+} from "../lib/eventTypes";
 import { EventDetailPopover } from "./EventDetailPopover";
 
 const CLUSTER_PX = 12;

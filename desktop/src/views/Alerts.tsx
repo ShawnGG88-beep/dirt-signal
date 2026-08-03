@@ -12,8 +12,8 @@ import {
 import { alertsToCsv, downloadCsv } from "@dirt-signal/shared";
 import { rangeFromPreset, type RangePreset } from "@dirt-signal/shared";
 import { useAlertPoll } from "../lib/useAlertPoll";
-import { LogEventForm } from "../components/LogEventForm";
-import { RangePicker } from "../components/RangePicker";
+import { LogEventForm } from "@dirt-signal/shared";
+import { RangePicker } from "@dirt-signal/shared";
 import type { PlantEventTypeKey } from "@dirt-signal/shared";
 
 const DEVICE_NAME = "pi-garden-01";

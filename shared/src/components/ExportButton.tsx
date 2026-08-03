@@ -1,5 +1,5 @@
-import type { PlantEvent, SensorReading } from "../lib/api";
-import { exportReadingsCsv } from "@dirt-signal/shared";
+import type { PlantEvent, SensorReading } from "../data/types";
+import { exportReadingsCsv } from "../lib/csv";
 
 interface ExportButtonProps {
   readings: SensorReading[];

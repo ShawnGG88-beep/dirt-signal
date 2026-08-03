@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { fetchEvents, fetchReadingsRange } from "../data/client";
 import {
-  fetchEvents,
-  fetchReadingsRange,
   HISTORY_FETCH_LIMIT,
   type PlantEvent,
   type SensorReading,
-} from "../lib/api";
-import { DEFAULT_DEVICE_TIMEZONE } from "@dirt-signal/shared";
+} from "../data/types";
+import { DEFAULT_DEVICE_TIMEZONE } from "../lib/dayNight";
 import {
   extractMetricValues,
   formatMetricValue,
@@ -14,13 +13,13 @@ import {
   rangeFromPreset,
   type MetricKey,
   type RangePreset,
-} from "@dirt-signal/shared";
+} from "../lib/metrics";
 import {
   loadEventFilter,
   saveEventFilter,
   type PlantEventTypeKey,
-} from "@dirt-signal/shared";
-import { computeStats, type TrendDirection } from "@dirt-signal/shared";
+} from "../lib/eventTypes";
+import { computeStats, type TrendDirection } from "../lib/stats";
 import { EventTypeFilter } from "./EventMarkerRail";
 import { ExportButton } from "./ExportButton";
 import { RangePicker } from "./RangePicker";
