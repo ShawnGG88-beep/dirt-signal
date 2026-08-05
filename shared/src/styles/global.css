@@ -135,15 +135,38 @@ body {
 
 .system-status-line {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.55rem;
   width: 100%;
   background: var(--surface-1);
   border: 1px solid var(--border);
-  padding: 0.35rem 0.5rem 0.35rem 0.35rem;
+  padding: 0.55rem 0.65rem;
   font-size: 0.8rem;
   color: var(--text-primary);
+}
+
+.system-status-primary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+}
+
+.system-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.system-status-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
 }
 
 .system-status-expand {
@@ -151,11 +174,11 @@ body {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.35rem 0.5rem;
-  flex: 1 1 auto;
+  width: 100%;
   min-width: 0;
   background: transparent;
   border: none;
-  padding: 0.2rem 0.4rem;
+  padding: 0.15rem 0;
   font-family: inherit;
   font-size: inherit;
   color: inherit;
@@ -166,6 +189,15 @@ body {
 .system-status-expand:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+}
+
+.system-status-meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.45rem;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .system-status-live .system-status-glyph,
@@ -199,7 +231,7 @@ body {
   color: var(--text-primary);
   font-family: inherit;
   font-size: 0.75rem;
-  padding: 0.15rem 0.45rem;
+  padding: 0.25rem 0.55rem;
   cursor: pointer;
 }
 
@@ -216,6 +248,7 @@ body {
 .system-status-chevron {
   margin-left: auto;
   color: var(--text-secondary);
+  flex-shrink: 0;
 }
 
 .system-status-detail {
@@ -2147,7 +2180,7 @@ body {
 }
 
 @media (pointer: coarse) {
-  /* Minimum 44px tap targets. */
+  /* Minimum 44px tap targets (both axes where the control is square). */
   .app-nav-btn,
   .range-picker-btn,
   .refresh-btn,
@@ -2175,6 +2208,12 @@ body {
     min-height: 44px;
   }
 
+  .theme-toggle {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+  }
+
   /* Event rail markers: full-size hit areas on a taller track. The marker
      clustering radius widens to 44px on coarse pointers (EventMarkerRail)
      so neighbouring targets cannot overlap. */
@@ -2189,16 +2228,142 @@ body {
 }
 
 @media (max-width: 560px) {
+  /*
+   * Mobile type scale: rem off a root that tracks the browser/OS default
+   * (typically 16px). Desktop keeps the denser 13px root above.
+   */
+  :root {
+    font-size: 100%;
+    line-height: 1.5;
+  }
+
   .app {
     padding: calc(0.85rem + env(safe-area-inset-top, 0px))
       calc(0.85rem + env(safe-area-inset-right, 0px))
       calc(0.85rem + env(safe-area-inset-bottom, 0px))
       calc(0.85rem + env(safe-area-inset-left, 0px));
+    font-size: 1rem;
+    line-height: 1.5;
   }
 
   .app-nav {
     flex-wrap: wrap;
     row-gap: 0.25rem;
+  }
+
+  .app-nav-btn {
+    font-size: 1rem;
+    line-height: 1.5;
+    padding: 0.5rem 0.75rem;
+  }
+
+  /* Headings: H1 28–32px, H2 22–26px, H3 18–20px. */
+  .dashboard-header h1,
+  .view-header h1,
+  .alerts-header h1,
+  .login-panel h1 {
+    font-size: 1.875rem; /* 30px */
+    line-height: 1.25;
+  }
+
+  .subtitle,
+  .view-status,
+  .muted {
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+
+  /* —— System status: two-tier, comfortable meta —— */
+  .system-status-line {
+    gap: 0.7rem;
+    padding: 0.75rem 0.85rem;
+    font-size: 1rem;
+  }
+
+  .system-status-badge {
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+
+  .system-status-label {
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+
+  .system-status-meta,
+  .system-status-device,
+  .system-status-reading,
+  .system-status-poll {
+    font-size: 0.875rem; /* 14px meta floor */
+    line-height: 1.5;
+  }
+
+  .system-status-profile-chip,
+  .system-status-alert-badge {
+    font-size: 0.875rem;
+    line-height: 1.5;
+    padding: 0.4rem 0.7rem;
+  }
+
+  .system-status-dl {
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  .system-status-dl dt {
+    font-size: 0.75rem; /* absolute floor */
+    line-height: 1.5;
+  }
+
+  /* —— Metric cards: label as heading, status readable, bounds as meta —— */
+  .metric-card-primary {
+    padding: 0.65rem 0.8rem;
+    gap: 0.35rem;
+    min-height: 0;
+  }
+
+  .metric-card-context {
+    padding: 0.55rem 0.75rem;
+    min-height: 0;
+  }
+
+  .metric-label {
+    font-size: 1.25rem; /* 20px H3 */
+    font-weight: 600;
+    line-height: 1.3;
+    letter-spacing: 0.06em;
+    color: var(--text-primary);
+  }
+
+  .metric-value {
+    font-size: 1.75rem; /* 28px */
+    line-height: 1.2;
+  }
+
+  .metric-value-compact {
+    font-size: 1.375rem;
+    line-height: 1.25;
+  }
+
+  .metric-status {
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+
+  .metric-delta {
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  .band-bar-labels {
+    font-size: 0.875rem;
+    line-height: 1.5;
+    margin-top: 0.3rem;
+  }
+
+  .metric-inline-retry {
+    font-size: 0.875rem;
+    line-height: 1.5;
   }
 
   /* Single-column stacks. */
@@ -2222,6 +2387,70 @@ body {
   .reports-season-dl > div {
     grid-template-columns: 1fr;
     gap: 0.15rem;
+  }
+
+  /* Controls and secondary UI: never below 12px; prefer 14px meta. */
+  .range-picker-label,
+  .range-picker-btn,
+  .refresh-time,
+  .diagnostics-toggle,
+  .form-field,
+  .status-text,
+  .status-detail,
+  .event-filter-chip,
+  .event-type-tile,
+  .metric-caveat,
+  .metric-trend,
+  .diagnostics-item-label,
+  .stat-hint,
+  .stat-label,
+  .history-unit,
+  .flag-badge,
+  .ok-badge,
+  .elevated-badge,
+  .plant-profile-label,
+  .recent-events-hint,
+  .report-event-count,
+  .alerts-severity,
+  .alerts-badge,
+  .alerts-ack-hint,
+  .alerts-rules-intro,
+  .alerts-rule-note,
+  .alerts-mode,
+  .alerts-fire-caution,
+  .dashboard-gdd-note,
+  .report-incomplete-badge,
+  .system-status-alert-badge {
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  .range-picker-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+  }
+
+  .range-picker-btn {
+    min-width: 44px;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .form-field input,
+  .form-field select,
+  .form-field textarea,
+  .btn-primary,
+  .btn-secondary,
+  .export-btn,
+  .refresh-btn,
+  .log-event-btn,
+  .link-btn {
+    font-size: 1rem;
+    line-height: 1.5;
+  }
+
+  .theme-toggle {
+    margin-left: 0;
   }
 
   /* Modals go full screen; content scrolls inside, never the page. */

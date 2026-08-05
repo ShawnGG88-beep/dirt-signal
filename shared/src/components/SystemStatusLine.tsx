@@ -136,6 +136,34 @@ export function SystemStatusLine({
   return (
     <div className={`system-status system-status-${state}`}>
       <div className="system-status-line">
+        <div className="system-status-primary">
+          <span className="system-status-badge" title={STATE_LABEL[state]}>
+            <span className="system-status-glyph" aria-hidden="true">
+              {STATE_GLYPH[state]}
+            </span>
+            <span className="system-status-label">{STATE_LABEL[state]}</span>
+          </span>
+          <div className="system-status-chips">
+            <button
+              type="button"
+              className="system-status-profile-chip"
+              onClick={onOpenProfile}
+            >
+              {cropType}/{lifecycleStage}
+            </button>
+            {openAlertCount > 0 && (
+              <button
+                type="button"
+                className={`system-status-alert-badge system-status-alert-${worstAlertSeverity ?? "info"}`}
+                onClick={onOpenAlerts}
+                title="Open alerts"
+                aria-label={`${openAlertCount} open alerts`}
+              >
+                {openAlertCount} alert{openAlertCount === 1 ? "" : "s"}
+              </button>
+            )}
+          </div>
+        </div>
         <button
           type="button"
           className="system-status-expand"
@@ -143,52 +171,29 @@ export function SystemStatusLine({
           aria-controls={panelId}
           onClick={toggle}
         >
-          <span className="system-status-state" title={STATE_LABEL[state]}>
-            <span className="system-status-glyph" aria-hidden="true">
-              {STATE_GLYPH[state]}
+          <span className="system-status-meta">
+            <span className="system-status-device">{deviceName}</span>
+            <span className="system-status-sep" aria-hidden="true">
+              ·
             </span>
-            <span className="system-status-label">{STATE_LABEL[state]}</span>
+            <span className="system-status-reading">
+              {readingAge ? `reading ${readingAge} ago` : "no reading"}
+            </span>
+            {pollAge !== null && (
+              <>
+                <span className="system-status-sep" aria-hidden="true">
+                  ·
+                </span>
+                <span className="system-status-poll">
+                  updated {pollAge} ago
+                </span>
+              </>
+            )}
           </span>
-          <span className="system-status-sep" aria-hidden="true">
-            ·
-          </span>
-          <span className="system-status-device">{deviceName}</span>
-          <span className="system-status-sep" aria-hidden="true">
-            ·
-          </span>
-          <span className="system-status-reading">
-            {readingAge ? `reading ${readingAge} ago` : "no reading"}
-          </span>
-          {pollAge !== null && (
-            <>
-              <span className="system-status-sep" aria-hidden="true">
-                ·
-              </span>
-              <span className="system-status-poll">updated {pollAge} ago</span>
-            </>
-          )}
           <span className="system-status-chevron" aria-hidden="true">
             {expanded ? "▾" : "▸"}
           </span>
         </button>
-        <button
-          type="button"
-          className="system-status-profile-chip"
-          onClick={onOpenProfile}
-        >
-          {cropType}/{lifecycleStage}
-        </button>
-        {openAlertCount > 0 && (
-          <button
-            type="button"
-            className={`system-status-alert-badge system-status-alert-${worstAlertSeverity ?? "info"}`}
-            onClick={onOpenAlerts}
-            title="Open alerts"
-            aria-label={`${openAlertCount} open alerts`}
-          >
-            {openAlertCount} alert{openAlertCount === 1 ? "" : "s"}
-          </button>
-        )}
       </div>
 
       {expanded && (
