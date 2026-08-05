@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en-GB" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dirt Signal — after fixture (History)</title>
+<link rel="stylesheet" href="/shared/src/styles/global.css" />
+<link rel="stylesheet" href="/web/src/styles/web.css" />
+</head>
+<body>
+<main class="app">
+  <header class="app-mobile-bar">
+    <button type="button" class="app-menu-toggle" aria-expanded="false">
+      <span class="app-menu-toggle-glyph" aria-hidden="true">☰</span>
+      <span class="visually-hidden">Open menu</span>
+    </button>
+    <p class="app-mobile-title">History</p>
+    <button type="button" class="theme-toggle" aria-label="Theme"><span>☾</span></button>
+  </header>
+  <nav class="app-nav-drawer" aria-hidden="true" inert>
+    <button type="button" class="app-nav-drawer-link">Dashboard</button>
+    <button type="button" class="app-nav-drawer-link app-nav-drawer-link-active">History</button>
+    <button type="button" class="app-nav-drawer-link">Reports</button>
+    <button type="button" class="app-nav-drawer-link">Alerts</button>
+    <button type="button" class="app-nav-drawer-link">Soil tests</button>
+    <button type="button" class="app-nav-drawer-link">Observations</button>
+  </nav>
+  <nav class="app-nav app-nav-desktop" aria-label="Main">
+    <button type="button" class="app-nav-btn">Dashboard</button>
+    <button type="button" class="app-nav-btn app-nav-btn-active">History</button>
+  </nav>
+  <header class="view-header">
+    <div>
+      <h1>History</h1>
+      <p class="view-status">Last 24 hours · pi-garden-01</p>
+    </div>
+    <div class="view-toolbar">
+      <div class="range-picker">
+        <span class="range-picker-label">Range</span>
+        <div class="range-picker-options">
+          <button type="button" class="range-picker-btn">6h</button>
+          <button type="button" class="range-picker-btn range-picker-btn-active">24h</button>
+          <button type="button" class="range-picker-btn">7d</button>
+          <button type="button" class="range-picker-btn">30d</button>
+        </div>
+      </div>
+    </div>
+  </header>
+  <div class="history-grid">
+    <section class="history-panel">
+      <h2 class="metric-label">Moisture</h2>
+      <div class="metric-value metric-value-compact tabular-nums">42%</div>
+      <div class="metric-status metric-status-warn">
+        <span class="metric-status-glyph">▲</span>
+        <span class="metric-status-text">out of bounds</span>
+      </div>
+      <div style="height:120px;margin-top:0.5rem;background:var(--surface-2)"></div>
+    </section>
+    <section class="history-panel">
+      <h2 class="metric-label">pH</h2>
+      <div class="metric-value metric-value-compact tabular-nums">6.4</div>
+      <div class="metric-status metric-status-ok">
+        <span class="metric-status-glyph">●</span>
+        <span class="metric-status-text">ok</span>
+      </div>
+      <div style="height:120px;margin-top:0.5rem;background:var(--surface-2)"></div>
+    </section>
+  </div>
+</main>
+</body>
+</html>

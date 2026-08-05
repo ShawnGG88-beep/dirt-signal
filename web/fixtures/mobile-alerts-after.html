@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en-GB" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dirt Signal — after fixture (Alerts)</title>
+<link rel="stylesheet" href="/shared/src/styles/global.css" />
+<link rel="stylesheet" href="/web/src/styles/web.css" />
+</head>
+<body>
+<main class="app">
+  <header class="app-mobile-bar">
+    <button type="button" class="app-menu-toggle" aria-expanded="false">
+      <span class="app-menu-toggle-glyph" aria-hidden="true">☰</span>
+      <span class="visually-hidden">Open menu</span>
+    </button>
+    <p class="app-mobile-title">Alerts</p>
+    <button type="button" class="theme-toggle" aria-label="Theme"><span>☾</span></button>
+  </header>
+  <nav class="app-nav-drawer" aria-hidden="true" inert>
+    <button type="button" class="app-nav-drawer-link">Dashboard</button>
+    <button type="button" class="app-nav-drawer-link">History</button>
+    <button type="button" class="app-nav-drawer-link">Reports</button>
+    <button type="button" class="app-nav-drawer-link app-nav-drawer-link-active">Alerts</button>
+    <button type="button" class="app-nav-drawer-link">Soil tests</button>
+    <button type="button" class="app-nav-drawer-link">Observations</button>
+  </nav>
+  <nav class="app-nav app-nav-desktop" aria-label="Main">
+    <button type="button" class="app-nav-btn">Dashboard</button>
+    <button type="button" class="app-nav-btn app-nav-btn-active">Alerts</button>
+  </nav>
+  <header class="alerts-header">
+    <h1>Alerts</h1>
+    <div class="alerts-header-actions">
+      <button type="button" class="btn-secondary export-btn">Export CSV</button>
+    </div>
+  </header>
+  <p class="alerts-honesty-critical">
+    Alert evaluation does not run in this web app. This view shows recorded
+    firings only.
+  </p>
+  <div class="alert-card" style="background:var(--surface-1);border:1px solid var(--border);padding:0.85rem;margin-top:0.85rem">
+    <div class="metric-label">Moisture low</div>
+    <div class="metric-status metric-status-warn" style="margin-top:0.35rem">
+      <span class="metric-status-glyph">▲</span>
+      <span class="metric-status-text">warning · open</span>
+    </div>
+    <p class="subtitle" style="margin-top:0.5rem">Triggered 14d ago · pi-garden-01</p>
+  </div>
+</main>
+</body>
+</html>
