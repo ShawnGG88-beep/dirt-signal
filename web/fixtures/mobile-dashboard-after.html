@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en-GB" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dirt Signal — after fixture (Dashboard)</title>
+<link rel="stylesheet" href="/shared/src/styles/global.css" />
+<link rel="stylesheet" href="/web/src/styles/web.css" />
+</head>
+<body>
+<main class="app">
+  <header class="app-mobile-bar">
+    <button type="button" class="app-menu-toggle" aria-expanded="false" aria-controls="drawer">
+      <span class="app-menu-toggle-glyph" aria-hidden="true">☰</span>
+      <span class="visually-hidden">Open menu</span>
+    </button>
+    <p class="app-mobile-title">Dashboard</p>
+    <button type="button" class="theme-toggle" aria-label="Theme"><span>☾</span></button>
+  </header>
+
+  <nav id="drawer" class="app-nav-drawer" aria-label="Main" aria-hidden="true" inert>
+    <button type="button" class="app-nav-drawer-link app-nav-drawer-link-active">Dashboard</button>
+    <button type="button" class="app-nav-drawer-link">History</button>
+    <button type="button" class="app-nav-drawer-link">Reports</button>
+    <button type="button" class="app-nav-drawer-link">Alerts</button>
+    <button type="button" class="app-nav-drawer-link">Soil tests</button>
+    <button type="button" class="app-nav-drawer-link">Observations</button>
+    <div class="app-nav-drawer-tools">
+      <label class="device-picker">
+        <span class="device-picker-label">Device</span>
+        <select class="device-picker-select"><option>pi-garden-01</option></select>
+      </label>
+      <button type="button" class="app-nav-drawer-link app-nav-drawer-signout">Sign out</button>
+    </div>
+  </nav>
+
+  <nav class="app-nav app-nav-desktop" aria-label="Main">
+    <button type="button" class="app-nav-btn app-nav-btn-active">Dashboard</button>
+    <button type="button" class="app-nav-btn">History</button>
+    <button type="button" class="app-nav-btn">Reports</button>
+    <button type="button" class="app-nav-btn">Alerts</button>
+    <button type="button" class="app-nav-btn">Soil tests</button>
+    <button type="button" class="app-nav-btn">Observations</button>
+    <span class="app-nav-spacer"></span>
+    <label class="device-picker">
+      <span class="device-picker-label">Device</span>
+      <select class="device-picker-select"><option>pi-garden-01</option></select>
+    </label>
+    <button type="button" class="theme-toggle" aria-label="Theme"><span>☾</span></button>
+    <button type="button" class="app-nav-btn">Sign out</button>
+  </nav>
+
+  <header class="dashboard-header">
+    <div>
+      <h1>Dashboard</h1>
+      <p class="subtitle">Live soil and plant readings</p>
+    </div>
+    <div class="system-status system-status-degraded">
+      <div class="system-status-line">
+        <div class="system-status-primary">
+          <span class="system-status-badge" title="Degraded">
+            <span class="system-status-glyph">▲</span>
+            <span class="system-status-label">Degraded</span>
+          </span>
+          <div class="system-status-chips">
+            <button type="button" class="system-status-profile-chip">tomato/mature</button>
+          </div>
+        </div>
+        <button type="button" class="system-status-expand">
+          <span class="system-status-meta">
+            <span class="system-status-device">pi-garden-01</span>
+            <span class="system-status-sep">·</span>
+            <span class="system-status-reading">reading 14d ago</span>
+            <span class="system-status-sep">·</span>
+            <span class="system-status-poll">updated 4s ago</span>
+          </span>
+          <span class="system-status-chevron">▸</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div class="metrics-primary">
+    <div class="metric-card metric-card-primary">
+      <div class="metric-header">
+        <span class="metric-label">Moisture</span>
+        <span class="metric-delta metric-delta-down">↓ 3% / 6h</span>
+      </div>
+      <div class="metric-value tabular-nums">42%</div>
+      <div class="band-bar">
+        <div class="band-bar-track">
+          <div class="band-bar-region band-bar-in" style="left:20%;width:40%"></div>
+          <div class="band-bar-marker band-marker-out" style="left:35%"></div>
+        </div>
+        <div class="band-bar-labels">
+          <span class="band-bar-num">60</span>
+          <span class="band-bar-num">80</span>
+        </div>
+      </div>
+      <div class="metric-status metric-status-warn">
+        <span class="metric-status-glyph">▲</span>
+        <span class="metric-status-text">out of bounds</span>
+      </div>
+      <div class="metric-spark" style="height:36px;background:var(--surface-2)"></div>
+    </div>
+    <div class="metric-card metric-card-primary">
+      <div class="metric-header"><span class="metric-label">pH</span></div>
+      <div class="metric-value tabular-nums">6.4</div>
+      <div class="band-bar">
+        <div class="band-bar-track">
+          <div class="band-bar-region band-bar-in" style="left:25%;width:50%"></div>
+          <div class="band-bar-marker" style="left:48%"></div>
+        </div>
+        <div class="band-bar-labels">
+          <span class="band-bar-num">6</span>
+          <span class="band-bar-num">6.8</span>
+        </div>
+      </div>
+      <div class="metric-status metric-status-ok">
+        <span class="metric-status-glyph">●</span>
+        <span class="metric-status-text">ok</span>
+      </div>
+      <div class="metric-spark" style="height:36px;background:var(--surface-2)"></div>
+    </div>
+    <div class="metric-card metric-card-primary">
+      <div class="metric-header"><span class="metric-label">Soil temp</span></div>
+      <div class="metric-value tabular-nums">18.2°C</div>
+      <div class="band-bar">
+        <div class="band-bar-track">
+          <div class="band-bar-region band-bar-in" style="left:20%;width:50%"></div>
+          <div class="band-bar-marker" style="left:42%"></div>
+        </div>
+        <div class="band-bar-labels">
+          <span class="band-bar-num">15</span>
+          <span class="band-bar-num">28</span>
+        </div>
+      </div>
+      <div class="metric-status metric-status-ok">
+        <span class="metric-status-glyph">●</span>
+        <span class="metric-status-text">ok</span>
+      </div>
+      <div class="metric-spark" style="height:36px;background:var(--surface-2)"></div>
+    </div>
+  </div>
+</main>
+</body>
+</html>
