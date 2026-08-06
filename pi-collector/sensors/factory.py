@@ -25,12 +25,21 @@ def build_sensors(
     dht22_mode: SensorMode = "mock",
     moisture_mode: SensorMode = "mock",
     ph_mode: SensorMode = "mock",
+    moisture_dry_raw: int | None = None,
+    moisture_wet_raw: int | None = None,
 ) -> tuple[MoistureSensor, PhSensor, AmbientSensor, SoilTempSensor]:
-    moisture: MoistureSensor = (
-        Ads1115MoistureSensor()
-        if moisture_mode == "real"
-        else MockMoistureSensor()
-    )
+    if moisture_mode == "real":
+        if moisture_dry_raw is None or moisture_wet_raw is None:
+            raise RuntimeError(
+                "moisture_mode: real requires moisture_dry_raw and "
+                "moisture_wet_raw in config.yaml"
+            )
+        moisture: MoistureSensor = Ads1115MoistureSensor(
+            dry_raw=moisture_dry_raw,
+            wet_raw=moisture_wet_raw,
+        )
+    else:
+        moisture = MockMoistureSensor()
     ph: PhSensor = (
         Ads1115PhSensor() if ph_mode == "real" else MockPhSensor()
     )

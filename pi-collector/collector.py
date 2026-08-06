@@ -278,6 +278,8 @@ def run() -> None:
     dht22_mode: SensorMode = config.get("dht22_mode", "mock")
     moisture_mode: SensorMode = config.get("moisture_mode", "mock")
     ph_mode: SensorMode = config.get("ph_mode", "mock")
+    moisture_dry_raw = config.get("moisture_dry_raw")
+    moisture_wet_raw = config.get("moisture_wet_raw")
     interval: int = int(config.get("read_interval_seconds", 900))
     camera_mode: CameraMode = config.get("camera_mode", "mock")
     capture_interval: int = int(config.get("capture_interval_seconds", 900))
@@ -300,6 +302,12 @@ def run() -> None:
         dht22_mode=dht22_mode,
         moisture_mode=moisture_mode,
         ph_mode=ph_mode,
+        moisture_dry_raw=(
+            int(moisture_dry_raw) if moisture_dry_raw is not None else None
+        ),
+        moisture_wet_raw=(
+            int(moisture_wet_raw) if moisture_wet_raw is not None else None
+        ),
     )
     camera = build_camera(
         camera_mode,
