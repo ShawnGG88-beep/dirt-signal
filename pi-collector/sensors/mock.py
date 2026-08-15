@@ -10,6 +10,8 @@ from sensors.base import (
     AmbientSensor,
     MoistureReading,
     MoistureSensor,
+    NpkReading,
+    NpkSensor,
     PhReading,
     PhSensor,
     SoilTempReading,
@@ -62,10 +64,34 @@ class MockSoilTempSensor:
         return SoilTempReading(temp_c=round(temp, 1))
 
 
-def build_mock_sensors() -> tuple[MoistureSensor, PhSensor, AmbientSensor, SoilTempSensor]:
+class MockNpkSensor:
+    def __init__(self) -> None:
+        self._n = random.uniform(25.0, 70.0)
+        self._p = random.uniform(15.0, 45.0)
+        self._k = random.uniform(40.0, 110.0)
+        self._ec = random.uniform(250.0, 700.0)
+
+    def read(self) -> NpkReading:
+        return NpkReading(
+            moisture_pct=round(
+                max(5.0, min(95.0, 45.0 + random.uniform(-4.0, 4.0))), 2
+            ),
+            temp_c=round(16.0 + _diurnal_offset(4.0) + random.uniform(-0.8, 0.8), 1),
+            ec_us_cm=int(max(0.0, self._ec + random.uniform(-40.0, 40.0))),
+            ph=round(max(4.5, min(8.5, 6.8 + random.uniform(-0.15, 0.15))), 2),
+            n_est=int(max(0.0, self._n + random.uniform(-5.0, 5.0))),
+            p_est=int(max(0.0, self._p + random.uniform(-4.0, 4.0))),
+            k_est=int(max(0.0, self._k + random.uniform(-6.0, 6.0))),
+        )
+
+
+def build_mock_sensors() -> tuple[
+    MoistureSensor, PhSensor, AmbientSensor, SoilTempSensor, NpkSensor
+]:
     return (
         MockMoistureSensor(),
         MockPhSensor(),
         MockAmbientSensor(),
         MockSoilTempSensor(),
+        MockNpkSensor(),
     )

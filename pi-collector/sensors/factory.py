@@ -4,12 +4,19 @@ from __future__ import annotations
 
 from typing import Literal
 
-from sensors.base import AmbientSensor, MoistureSensor, PhSensor, SoilTempSensor
+from sensors.base import (
+    AmbientSensor,
+    MoistureSensor,
+    NpkSensor,
+    PhSensor,
+    SoilTempSensor,
+)
 from sensors.dht22 import Dht22Sensor
 from sensors.ds18b20 import Ds18b20Sensor
 from sensors.mock import (
     MockAmbientSensor,
     MockMoistureSensor,
+    MockNpkSensor,
     MockPhSensor,
     MockSoilTempSensor,
 )
@@ -25,9 +32,10 @@ def build_sensors(
     dht22_mode: SensorMode = "mock",
     moisture_mode: SensorMode = "mock",
     ph_mode: SensorMode = "mock",
+    npk_mode: SensorMode = "mock",
     moisture_dry_raw: int | None = None,
     moisture_wet_raw: int | None = None,
-) -> tuple[MoistureSensor, PhSensor, AmbientSensor, SoilTempSensor]:
+) -> tuple[MoistureSensor, PhSensor, AmbientSensor, SoilTempSensor, NpkSensor]:
     if moisture_mode == "real":
         if moisture_dry_raw is None or moisture_wet_raw is None:
             raise RuntimeError(
@@ -49,4 +57,10 @@ def build_sensors(
     soil_temp: SoilTempSensor = (
         Ds18b20Sensor() if ds18b20_mode == "real" else MockSoilTempSensor()
     )
-    return moisture, ph, ambient, soil_temp
+    if npk_mode == "real":
+        from sensors.npk import Rs485NpkSensor
+
+        npk: NpkSensor = Rs485NpkSensor()
+    else:
+        npk = MockNpkSensor()
+    return moisture, ph, ambient, soil_temp, npk

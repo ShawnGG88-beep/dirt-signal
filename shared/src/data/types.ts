@@ -19,6 +19,12 @@ export interface SensorReading {
   npk_n_est: number | null;
   npk_p_est: number | null;
   npk_k_est: number | null;
+  /** Moisture % from the 7-in-1 NPK probe. Null on pre-NPK rows. */
+  npk_moisture_pct?: number | null;
+  /** Temperature °C from the 7-in-1 NPK probe. Null on pre-NPK rows. */
+  npk_temp_c?: number | null;
+  /** pH from the 7-in-1 NPK probe. Null on pre-NPK rows. */
+  npk_ph?: number | null;
   probe_depth_cm?: number | null;
   /** Profile stamped at insert. Null on pre-provenance rows. */
   crop_type_at_reading?: string | null;

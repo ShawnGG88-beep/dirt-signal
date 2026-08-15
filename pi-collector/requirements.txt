@@ -8,5 +8,7 @@ PyYAML>=6.0.2
 adafruit-circuitpython-dht>=4.0.0
 # DS18B20 soil temp over 1-Wire (enable with raspi-config; default bus pin GPIO4)
 w1thermsensor>=2.3.0
-# ADS1115 ADC over I2C (HW-390 capacitive moisture on A0; pH later)
+# ADS1115 ADC over I2C (HW-390 capacitive moisture on A0; analog pH on A1)
 adafruit-circuitpython-ads1x15>=2.0.0
+# 7-in-1 NPK soil sensor over USB-RS485 Modbus RTU
+pymodbus>=3.6.0,<4

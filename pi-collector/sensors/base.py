@@ -28,6 +28,17 @@ class SoilTempReading:
     temp_c: float
 
 
+@dataclass(frozen=True)
+class NpkReading:
+    moisture_pct: float
+    temp_c: float
+    ec_us_cm: int
+    ph: float
+    n_est: int
+    p_est: int
+    k_est: int
+
+
 class MoistureSensor(Protocol):
     def read(self) -> MoistureReading: ...
 
@@ -42,3 +53,7 @@ class AmbientSensor(Protocol):
 
 class SoilTempSensor(Protocol):
     def read(self) -> SoilTempReading: ...
+
+
+class NpkSensor(Protocol):
+    def read(self) -> NpkReading: ...

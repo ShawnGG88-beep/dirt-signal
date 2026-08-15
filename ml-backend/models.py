@@ -24,6 +24,9 @@ class SensorReading(BaseModel):
     npk_n_est: int | None = None
     npk_p_est: int | None = None
     npk_k_est: int | None = None
+    npk_moisture_pct: float | None = None
+    npk_temp_c: float | None = None
+    npk_ph: float | None = None
     probe_depth_cm: float | None = None
     # Provenance: profile in effect at insert. NULL on pre-migration rows.
     crop_type_at_reading: str | None = None
