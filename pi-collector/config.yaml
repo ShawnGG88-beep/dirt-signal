@@ -9,13 +9,6 @@ moisture_mode: real
 moisture_dry_raw: 21116   # dry air = 0%
 moisture_wet_raw: 7388    # submerged to marked line = 100%
 
-# Analog pH probe on ADS1115 A1. Until buffer calibration, real mode
-# stores uncalibrated voltage in the ph field (not a pH number).
-ph_mode: real
-ph_cal_401_raw: 16988
-ph_cal_686_raw: 15340
-ph_cal_918_raw: 14105
-
 # Analog pH probe on ADS1115 A1. Piecewise linear interpolation between
 # three buffer points (used when ph_mode: real).
 ph_mode: real
