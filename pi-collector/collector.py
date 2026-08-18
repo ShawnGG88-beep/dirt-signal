@@ -298,6 +298,9 @@ def run() -> None:
     npk_mode: SensorMode = config.get("npk_mode", "mock")
     moisture_dry_raw = config.get("moisture_dry_raw")
     moisture_wet_raw = config.get("moisture_wet_raw")
+    ph_cal_401_raw = config.get("ph_cal_401_raw")
+    ph_cal_686_raw = config.get("ph_cal_686_raw")
+    ph_cal_918_raw = config.get("ph_cal_918_raw")
     interval: int = int(config.get("read_interval_seconds", 900))
     camera_mode: CameraMode = config.get("camera_mode", "mock")
     capture_interval: int = int(config.get("capture_interval_seconds", 900))
@@ -326,6 +329,15 @@ def run() -> None:
         ),
         moisture_wet_raw=(
             int(moisture_wet_raw) if moisture_wet_raw is not None else None
+        ),
+        ph_cal_401_raw=(
+            int(ph_cal_401_raw) if ph_cal_401_raw is not None else None
+        ),
+        ph_cal_686_raw=(
+            int(ph_cal_686_raw) if ph_cal_686_raw is not None else None
+        ),
+        ph_cal_918_raw=(
+            int(ph_cal_918_raw) if ph_cal_918_raw is not None else None
         ),
     )
     camera = build_camera(
