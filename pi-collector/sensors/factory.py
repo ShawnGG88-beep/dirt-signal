@@ -35,6 +35,9 @@ def build_sensors(
     npk_mode: SensorMode = "mock",
     moisture_dry_raw: int | None = None,
     moisture_wet_raw: int | None = None,
+    ph_cal_401_raw: int | None = None,
+    ph_cal_686_raw: int | None = None,
+    ph_cal_918_raw: int | None = None,
 ) -> tuple[MoistureSensor, PhSensor, AmbientSensor, SoilTempSensor, NpkSensor]:
     if moisture_mode == "real":
         if moisture_dry_raw is None or moisture_wet_raw is None:
@@ -48,9 +51,23 @@ def build_sensors(
         )
     else:
         moisture = MockMoistureSensor()
-    ph: PhSensor = (
-        Ads1115PhSensor() if ph_mode == "real" else MockPhSensor()
-    )
+    if ph_mode == "real":
+        if (
+            ph_cal_401_raw is None
+            or ph_cal_686_raw is None
+            or ph_cal_918_raw is None
+        ):
+            raise RuntimeError(
+                "ph_mode: real requires ph_cal_401_raw, ph_cal_686_raw, "
+                "and ph_cal_918_raw in config.yaml"
+            )
+        ph: PhSensor = Ads1115PhSensor(
+            cal_401_raw=ph_cal_401_raw,
+            cal_686_raw=ph_cal_686_raw,
+            cal_918_raw=ph_cal_918_raw,
+        )
+    else:
+        ph = MockPhSensor()
     ambient: AmbientSensor = (
         Dht22Sensor() if dht22_mode == "real" else MockAmbientSensor()
     )
