@@ -31,6 +31,7 @@ from alerts.hysteresis import (
 from alerts.scoring import (
     SCORED_KEYS,
     MetricKey,
+    SoilMoistureAnchors,
     get_metric_bounds,
     reading_profile,
     score_reading_metric,
@@ -73,9 +74,23 @@ class EvalContext:
     events: list[dict[str, Any]] | None = None
     alert_is_open: bool = False
     open_metric_key: str | None = None
+    forecast_rows: list[dict[str, Any]] | None = None
+    daily_climate: list[Any] | None = None
+    advisory_digest: dict[str, Any] | None = None
+    dsv_rows: dict[str, dict[str, Any]] | None = None
+    soil_texture: str | None = None
+    # HW-390 relative-saturation anchors for grape depletion scoring.
+    soil_field_capacity_raw: float | None = None
+    soil_refill_point_raw: float | None = None
 
     def tz(self) -> str:
         return self.timezone or default_device_timezone()
+
+    def moisture_anchors(self) -> SoilMoistureAnchors:
+        return SoilMoistureAnchors(
+            field_capacity_pct=self.soil_field_capacity_raw,
+            refill_point_pct=self.soil_refill_point_raw,
+        )
 
 
 FROST_NOTE = (
@@ -131,7 +146,13 @@ def _hysteresis_params(params: dict[str, Any]) -> tuple[int, int, float]:
 
 
 def evaluate_frost_risk(ctx: EvalContext) -> RuleDecision:
-    """Ambient below threshold at night, or projecting below 0°C soon."""
+    """Ambient below threshold at night, or projecting below 0°C soon.
+
+    Cultivar tissue-damage tables (Chardonnay / Pinot Noir / Cabernet
+    Sauvignon) live in advisories.grape_frost and are reference data. This
+    rule stays a 2°C ambient trailing indicator and does not read those
+    tables: the HW-390/ambient probe is not a cultivar hardiness model.
+    """
     params = ctx.params
     n, m, db_frac = _hysteresis_params(params)
     threshold = param_float(params, "threshold_c", 2.0)
@@ -269,7 +290,9 @@ def _oob_for_metric(
         if reading is None:
             return None
         crop, stage = reading_profile(reading, ctx.crop_type, ctx.lifecycle_stage)
-        score = score_reading_metric(reading, key, crop, stage, ctx.tz())
+        score = score_reading_metric(
+            reading, key, crop, stage, ctx.tz(), ctx.moisture_anchors()
+        )
         if score.status == "unknown":
             return None
         if restraint:
@@ -281,7 +304,9 @@ def _oob_for_metric(
         if reading is None:
             return None
         crop, stage = reading_profile(reading, ctx.crop_type, ctx.lifecycle_stage)
-        score = score_reading_metric(reading, key, crop, stage, ctx.tz())
+        score = score_reading_metric(
+            reading, key, crop, stage, ctx.tz(), ctx.moisture_anchors()
+        )
         if score.status == "unknown" or score.bounds is None or point.value is None:
             return None
         clear_lo, clear_hi = deadband_bounds(
@@ -357,7 +382,9 @@ def _approach_for_metric(
         if reading is None:
             return None
         crop, stage = reading_profile(reading, ctx.crop_type, ctx.lifecycle_stage)
-        score = score_reading_metric(reading, key, crop, stage, ctx.tz())
+        score = score_reading_metric(
+            reading, key, crop, stage, ctx.tz(), ctx.moisture_anchors()
+        )
         if score.status != "watch":
             return False if score.status != "unknown" else None
         if restraint and score.toward_bound != "high":
@@ -369,7 +396,9 @@ def _approach_for_metric(
         if reading is None:
             return None
         crop, stage = reading_profile(reading, ctx.crop_type, ctx.lifecycle_stage)
-        score = score_reading_metric(reading, key, crop, stage, ctx.tz())
+        score = score_reading_metric(
+            reading, key, crop, stage, ctx.tz(), ctx.moisture_anchors()
+        )
         if score.status == "unknown":
             return None
         # Clear when no longer in watch (ok, or already out-of-band handled elsewhere)
@@ -417,7 +446,9 @@ def _trend_toward_bound(ctx: EvalContext, key: MetricKey, n: int) -> bool:
     toward: str | None = None
     for reading in window:
         crop, stage = reading_profile(reading, ctx.crop_type, ctx.lifecycle_stage)
-        score = score_reading_metric(reading, key, crop, stage, ctx.tz())
+        score = score_reading_metric(
+            reading, key, crop, stage, ctx.tz(), ctx.moisture_anchors()
+        )
         raw = reading.get(key)
         if raw is None or score.toward_bound is None:
             return False
@@ -485,6 +516,10 @@ def evaluate_irrigation_due(ctx: EvalContext) -> RuleDecision:
     """Fire when an available dry-down projection reaches the lower bound soon.
 
     Never constructs a projection the derived layer declined to produce.
+
+    Grape cultivar water-stress tables (Psi_gs50 / Psi_stem) are reference
+    data only and are not read here. Hardware measures soil moisture, not
+    water potential; see GRAPE_WINE_WATER_STRESS_DRIVES_IRRIGATION.
     """
     params = ctx.params
     lead = param_float(params, "lead_hours", 12.0)
@@ -493,7 +528,18 @@ def evaluate_irrigation_due(ctx: EvalContext) -> RuleDecision:
     bounds = get_metric_bounds(
         "moisture_pct", ctx.crop_type, ctx.lifecycle_stage, ctx.now
     )
-    lower = bounds.min if bounds else None
+    anchors = ctx.moisture_anchors()
+    # Grape has no moisture band; use grower refill point when both anchors set.
+    if bounds is not None:
+        lower = bounds.min
+    elif (
+        anchors.field_capacity_pct is not None
+        and anchors.refill_point_pct is not None
+        and anchors.field_capacity_pct > anchors.refill_point_pct
+    ):
+        lower = float(anchors.refill_point_pct)
+    else:
+        lower = None
     dry: DryDownResult = project_drydown(
         ctx.readings,
         ctx.events or [],
@@ -640,6 +686,229 @@ def evaluate_disease_pressure(ctx: EvalContext) -> RuleDecision:
 
 
 # ---------------------------------------------------------------------------
+# Tomato weather advisories (forecast + DSV + stability)
+# ---------------------------------------------------------------------------
+
+TOMATO_ADVISORY_RULES = frozenset(
+    {
+        "forecast_chill_risk",
+        "tomato_early_blight",
+        "tomato_late_blight",
+        "tomato_powdery_mildew",
+        "tomato_moisture_cracking",
+    }
+)
+
+
+def _tomato_only(ctx: EvalContext) -> bool:
+    return ctx.crop_type == "tomato"
+
+
+def evaluate_forecast_chill_risk(ctx: EvalContext) -> RuleDecision:
+    """Open-Meteo forecast nights below chill/frost/blossom-drop thresholds."""
+    if not _tomato_only(ctx):
+        return RuleDecision(Verdict.NO_CHANGE)
+    rows = ctx.forecast_rows or []
+    if not rows:
+        return RuleDecision(Verdict.NO_CHANGE)
+
+    from advisories.tomato_chill import assess_tomato_chill
+
+    assessment = assess_tomato_chill(
+        rows,
+        ctx.tz(),
+        lifecycle_stage=ctx.lifecycle_stage,
+        now=ctx.now,
+    )
+    at_risk = assessment.highest_tier in (
+        "frost",
+        "chilling",
+        "blossom_drop",
+        "slow_growth",
+    )
+
+    if ctx.alert_is_open:
+        if not at_risk:
+            return RuleDecision(
+                Verdict.CLEAR,
+                message="Forecast no longer indicates chill, frost or blossom-drop risk.",
+            )
+        return RuleDecision(Verdict.NO_CHANGE)
+
+    if not at_risk:
+        return RuleDecision(Verdict.NO_CHANGE)
+
+    severity: Severity = "critical" if assessment.highest_tier == "frost" else "warning"
+    low = assessment.nights[0].low_c if assessment.nights else None
+    return RuleDecision(
+        Verdict.FIRE,
+        severity=severity,
+        metric_key="ambient_temp_c",
+        trigger_value=low,
+        message=assessment.message,
+    )
+
+
+def evaluate_tomato_early_blight(ctx: EvalContext) -> RuleDecision:
+    if not _tomato_only(ctx):
+        return RuleDecision(Verdict.NO_CHANGE)
+    row = (ctx.dsv_rows or {}).get("early_blight")
+    if row is None:
+        return RuleDecision(Verdict.NO_CHANGE)
+
+    spray = bool(row.get("spray_recommended"))
+    accumulated = float(row.get("accumulated_dsv") or 0.0)
+    threshold = float(row.get("threshold") or 15.0)
+
+    if ctx.alert_is_open:
+        if not spray and accumulated < threshold * 0.5:
+            return RuleDecision(
+                Verdict.CLEAR,
+                message="Early blight DSV reset; spray window passed.",
+            )
+        return RuleDecision(Verdict.NO_CHANGE)
+
+    if not spray:
+        return RuleDecision(Verdict.NO_CHANGE)
+
+    return RuleDecision(
+        Verdict.FIRE,
+        severity="warning",
+        metric_key="early_blight_dsv",
+        trigger_value=accumulated,
+        message=(
+            f"Tomato early blight (TOM-CAST): accumulated DSV reached "
+            f"{threshold:.0f}; fungicide spray recommended."
+        ),
+    )
+
+
+def evaluate_tomato_late_blight(ctx: EvalContext) -> RuleDecision:
+    if not _tomato_only(ctx):
+        return RuleDecision(Verdict.NO_CHANGE)
+    row = (ctx.dsv_rows or {}).get("late_blight")
+    if row is None:
+        return RuleDecision(Verdict.NO_CHANGE)
+
+    spray = bool(row.get("spray_recommended"))
+    accumulated = float(row.get("accumulated_dsv") or 0.0)
+    threshold = float(row.get("threshold") or 15.0)
+
+    if ctx.alert_is_open:
+        if not spray and accumulated < threshold * 0.5:
+            return RuleDecision(
+                Verdict.CLEAR,
+                message="Late blight DSV reset; spray window passed.",
+            )
+        return RuleDecision(Verdict.NO_CHANGE)
+
+    if not spray:
+        return RuleDecision(Verdict.NO_CHANGE)
+
+    return RuleDecision(
+        Verdict.FIRE,
+        severity="warning",
+        metric_key="late_blight_dsv",
+        trigger_value=accumulated,
+        message=(
+            f"Tomato late blight (Wallin simplified): accumulated DSV reached "
+            f"{threshold:.0f}; protectant spray recommended."
+        ),
+    )
+
+
+def evaluate_tomato_powdery_mildew(ctx: EvalContext) -> RuleDecision:
+    if not _tomato_only(ctx):
+        return RuleDecision(Verdict.NO_CHANGE)
+    digest = ctx.advisory_digest
+    if digest is None or digest.get("_computed_at") is None:
+        return RuleDecision(Verdict.NO_CHANGE)
+
+    tomato = digest.get("tomato")
+    if not isinstance(tomato, dict):
+        return RuleDecision(Verdict.NO_CHANGE)
+    mildew = tomato.get("powdery_mildew")
+    if not isinstance(mildew, dict):
+        return RuleDecision(Verdict.NO_CHANGE)
+
+    elevated = bool(mildew.get("leveillula_elevated"))
+    message = str(
+        mildew.get("leveillula_message")
+        or "Leveillula taurica powdery mildew risk assessment unavailable."
+    )
+
+    if ctx.alert_is_open:
+        if not elevated:
+            return RuleDecision(
+                Verdict.CLEAR,
+                message="Leveillula taurica powdery mildew risk no longer elevated.",
+            )
+        return RuleDecision(Verdict.NO_CHANGE)
+
+    n = param_int(ctx.params, "consecutive_n", DEFAULT_CONSECUTIVE_N)
+    if not elevated:
+        return RuleDecision(Verdict.NO_CHANGE)
+
+    points = _points_for(ctx.readings, "ambient_humidity_pct")
+    if not streak_ok(
+        points[-max(n, 1) :],
+        lambda p: p.value is not None,
+        needed=min(n, len(points)) if points else n,
+        max_gap_seconds=ctx.max_gap_seconds,
+    ):
+        return RuleDecision(Verdict.NO_CHANGE)
+
+    return RuleDecision(
+        Verdict.FIRE,
+        severity="info",
+        metric_key="powdery_mildew",
+        trigger_value=None,
+        message=message,
+    )
+
+
+def evaluate_tomato_moisture_cracking(ctx: EvalContext) -> RuleDecision:
+    if not _tomato_only(ctx):
+        return RuleDecision(Verdict.NO_CHANGE)
+
+    digest = ctx.advisory_digest
+    if digest is None or digest.get("_computed_at") is None:
+        return RuleDecision(Verdict.NO_CHANGE)
+
+    tomato = digest.get("tomato")
+    if not isinstance(tomato, dict):
+        return RuleDecision(Verdict.NO_CHANGE)
+    moisture = tomato.get("moisture")
+    if not isinstance(moisture, dict):
+        return RuleDecision(Verdict.NO_CHANGE)
+
+    cracking = bool(moisture.get("cracking_risk"))
+    headline = str(moisture.get("headline") or "")
+    weekly = str(moisture.get("weekly_context") or "")
+    consecutive_dry = moisture.get("consecutive_dry_days")
+    trigger = float(consecutive_dry) if consecutive_dry is not None else None
+
+    if ctx.alert_is_open:
+        if not cracking:
+            return RuleDecision(
+                Verdict.CLEAR,
+                message="Moisture influx risk after dry spell no longer forecast.",
+            )
+        return RuleDecision(Verdict.NO_CHANGE)
+
+    if not cracking:
+        return RuleDecision(Verdict.NO_CHANGE)
+
+    return RuleDecision(
+        Verdict.FIRE,
+        severity="warning",
+        metric_key="moisture_pct",
+        trigger_value=trigger,
+        message=f"{headline} {weekly}".strip(),
+    )
+
+
+# ---------------------------------------------------------------------------
 # dispatch
 # ---------------------------------------------------------------------------
 
@@ -650,6 +919,11 @@ RULE_TYPES = (
     "collector_silence",
     "irrigation_due",
     "disease_pressure",
+    "forecast_chill_risk",
+    "tomato_early_blight",
+    "tomato_late_blight",
+    "tomato_powdery_mildew",
+    "tomato_moisture_cracking",
 )
 
 # Multi-metric rules return a list; others a single decision.
@@ -687,4 +961,14 @@ def evaluate_rule(rule_type: str, ctx: EvalContext) -> list[RuleDecision]:
         return [evaluate_irrigation_due(ctx)]
     if rule_type == "disease_pressure":
         return [evaluate_disease_pressure(ctx)]
+    if rule_type == "forecast_chill_risk":
+        return [evaluate_forecast_chill_risk(ctx)]
+    if rule_type == "tomato_early_blight":
+        return [evaluate_tomato_early_blight(ctx)]
+    if rule_type == "tomato_late_blight":
+        return [evaluate_tomato_late_blight(ctx)]
+    if rule_type == "tomato_powdery_mildew":
+        return [evaluate_tomato_powdery_mildew(ctx)]
+    if rule_type == "tomato_moisture_cracking":
+        return [evaluate_tomato_moisture_cracking(ctx)]
     return [RuleDecision(Verdict.NO_CHANGE, message=f"Unknown rule_type {rule_type}")]

@@ -15,13 +15,24 @@ from typing import Any
 
 from alerts.hysteresis import DEFAULT_REFIRE_HOURS, ensure_utc, param_float
 from alerts.rules import EvalContext, Verdict, evaluate_rule
+from advisories.dsv_store import load_dsv_row, load_latest_advisory_digest
 from db import get_supabase
+from weather import load_forecast_rows
 
 logger = logging.getLogger("dirt_signal.alerts")
 
 DEFAULT_EVAL_INTERVAL_SECONDS = 60
 READINGS_LOOKBACK_HOURS = 36
 EVENTS_LOOKBACK_HOURS = 72
+
+
+def _optional_device_float(raw: Any) -> float | None:
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 def _collector_interval() -> float:
@@ -151,6 +162,17 @@ class AlertEngine:
             events = self._load_events(client, device_id, now)
             open_events = self._load_open_events(client, device_id)
 
+            forecast_rows: list[dict[str, Any]] = []
+            advisory_digest: dict[str, Any] | None = None
+            dsv_rows: dict[str, dict[str, Any]] = {}
+            if crop == "tomato":
+                forecast_rows = load_forecast_rows(client, device_id, now=now)
+                advisory_digest = load_latest_advisory_digest(client, device_id)
+                for disease_key in ("early_blight", "late_blight"):
+                    dsv_rows[disease_key] = load_dsv_row(
+                        client, device_id, disease_key
+                    )
+
             for rule in applicable:
                 if not rule.get("enabled", True):
                     continue
@@ -188,6 +210,16 @@ class AlertEngine:
                             events=events,
                             alert_is_open=open_row is not None,
                             open_metric_key=metric_key if open_row else None,
+                            forecast_rows=forecast_rows or None,
+                            advisory_digest=advisory_digest,
+                            dsv_rows=dsv_rows or None,
+                            soil_texture=device.get("soil_texture"),
+                            soil_field_capacity_raw=_optional_device_float(
+                                device.get("soil_field_capacity_raw")
+                            ),
+                            soil_refill_point_raw=_optional_device_float(
+                                device.get("soil_refill_point_raw")
+                            ),
                         )
                         decisions = evaluate_rule(rule_type, ctx)
                         evaluated += 1
@@ -235,6 +267,16 @@ class AlertEngine:
                     alert_is_open=open_row is not None,
                     open_metric_key=(
                         open_row.get("metric_key") if open_row else None
+                    ),
+                    forecast_rows=forecast_rows or None,
+                    advisory_digest=advisory_digest,
+                    dsv_rows=dsv_rows or None,
+                    soil_texture=device.get("soil_texture"),
+                    soil_field_capacity_raw=_optional_device_float(
+                        device.get("soil_field_capacity_raw")
+                    ),
+                    soil_refill_point_raw=_optional_device_float(
+                        device.get("soil_refill_point_raw")
                     ),
                 )
                 decisions = evaluate_rule(rule_type, ctx)

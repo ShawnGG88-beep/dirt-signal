@@ -8,13 +8,14 @@ from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 
-from constants import CROP_PROFILES
+from constants import CROP_PROFILES, grape_wine_cultivar_options, is_valid_grape_wine_cultivar
 from db import get_supabase, resolve_device_by_id
 from models import (
     DeviceProfileOptionsResponse,
     DeviceProfileUpdate,
     DeviceResponse,
     ProfileCropOption,
+    ProfileCultivarOption,
     ProfileStageOption,
 )
 
@@ -40,11 +41,19 @@ def _profile_options() -> list[ProfileCropOption]:
             )
             for stage_key in crop.get("stages", {}).keys()
         ]
+        cultivars = [
+            ProfileCultivarOption(
+                cultivar=str(entry["cultivar"]),
+                display_name=str(entry["display_name"]),
+            )
+            for entry in grape_wine_cultivar_options()
+        ] if crop_type == "grape_wine" else []
         crops.append(
             ProfileCropOption(
                 crop_type=crop_type,
                 display_name=display_name,
                 lifecycle_stages=stages,
+                cultivars=cultivars,
             )
         )
     return crops
@@ -93,6 +102,10 @@ def _device_response(row: dict) -> DeviceResponse:
         lifecycle_stage=str(row.get("lifecycle_stage") or "mature"),
         timezone=str(row.get("timezone") or "Africa/Johannesburg"),
         season_start_date=str(season)[:10] if season else None,
+        soil_texture=row.get("soil_texture"),
+        cultivar=row.get("cultivar"),
+        soil_field_capacity_raw=row.get("soil_field_capacity_raw"),
+        soil_refill_point_raw=row.get("soil_refill_point_raw"),
     )
 
 
@@ -175,6 +188,86 @@ def patch_device_profile(
                 detail="season_start_date must be a valid calendar date",
             ) from exc
         patch["season_start_date"] = raw
+
+    if body.soil_texture is not None:
+        texture = body.soil_texture.strip().lower() if body.soil_texture else None
+        if texture == "":
+            patch["soil_texture"] = None
+        elif texture not in ("sand", "sandy_loam", "loam", "clay"):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "soil_texture must be one of: sand, sandy_loam, loam, clay"
+                ),
+            )
+        else:
+            patch["soil_texture"] = texture
+
+    if body.cultivar is not None:
+        raw_cultivar = body.cultivar.strip().lower() if body.cultivar else ""
+        if raw_cultivar == "":
+            patch["cultivar"] = None
+        elif not is_valid_grape_wine_cultivar(raw_cultivar):
+            valid = ", ".join(
+                str(entry["cultivar"]) for entry in grape_wine_cultivar_options()
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown cultivar '{body.cultivar}'. Valid values: {valid}.",
+            )
+        else:
+            if str(new_crop) != "grape_wine":
+                raise HTTPException(
+                    status_code=400,
+                    detail="cultivar is only valid when crop_type is grape_wine",
+                )
+            patch["cultivar"] = raw_cultivar
+
+    if str(new_crop) != "grape_wine" and (
+        body.crop_type is not None or body.cultivar is not None
+    ):
+        patch["cultivar"] = None
+
+    def _validate_anchor_pct(name: str, value: float | None) -> float | None:
+        if value is None:
+            return None
+        if not (0.0 <= float(value) <= 100.0):
+            raise HTTPException(
+                status_code=400,
+                detail=f"{name} must be between 0 and 100 (HW-390 relative saturation %)",
+            )
+        return float(value)
+
+    if (
+        "soil_field_capacity_raw" in body.model_fields_set
+        or "soil_refill_point_raw" in body.model_fields_set
+    ):
+        # Explicit null clears; otherwise validate range. Ordering checked against
+        # the resulting pair (patch + existing) so partial updates stay safe.
+        if "soil_field_capacity_raw" in body.model_fields_set:
+            patch["soil_field_capacity_raw"] = _validate_anchor_pct(
+                "soil_field_capacity_raw", body.soil_field_capacity_raw
+            )
+        if "soil_refill_point_raw" in body.model_fields_set:
+            patch["soil_refill_point_raw"] = _validate_anchor_pct(
+                "soil_refill_point_raw", body.soil_refill_point_raw
+            )
+        fc = patch.get(
+            "soil_field_capacity_raw",
+            existing.get("soil_field_capacity_raw"),
+        )
+        rp = patch.get(
+            "soil_refill_point_raw",
+            existing.get("soil_refill_point_raw"),
+        )
+        if fc is not None and rp is not None and float(fc) <= float(rp):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "soil_field_capacity_raw must be greater than "
+                    "soil_refill_point_raw"
+                ),
+            )
 
     if not patch:
         raise HTTPException(status_code=400, detail="No fields to update")

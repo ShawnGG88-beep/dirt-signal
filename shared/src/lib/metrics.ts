@@ -1,12 +1,5 @@
 import type { SensorReading } from "../data/types";
 import {
-  CROP_PROFILES,
-  DEFAULT_CROP_TYPE,
-  DEFAULT_LIFECYCLE_STAGE,
-  AMBIENT_TEMP_DAY_MAX_C,
-  AMBIENT_TEMP_DAY_MIN_C,
-  AMBIENT_TEMP_NIGHT_MAX_C,
-  AMBIENT_TEMP_NIGHT_MIN_C,
   HUMIDITY_MAX_PCT,
   HUMIDITY_MIN_PCT,
   MOISTURE_MAX_PCT,
@@ -15,6 +8,9 @@ import {
   PH_MIN,
   SOIL_TEMP_IDEAL_MAX_C,
   SOIL_TEMP_IDEAL_MIN_C,
+  getCropStage,
+  grapeRootZoneTempZone,
+  isGrapeCrop,
   type ScoringSemantic,
 } from "./growingConstants";
 import {
@@ -167,12 +163,7 @@ export function getMetricBoundsForProfile(
     return null;
   }
 
-  const cropKey = cropType ?? DEFAULT_CROP_TYPE;
-  const stageKey = lifecycleStage ?? DEFAULT_LIFECYCLE_STAGE;
-  const stage = CROP_PROFILES[cropKey]?.stages[stageKey];
-  if (!stage) {
-    return null;
-  }
+  const stage = getCropStage(cropType, lifecycleStage);
 
   if (key === "moisture_pct") {
     if (
@@ -218,8 +209,8 @@ export function getMetricBoundsForProfile(
 }
 
 /**
- * Ambient day/night bounds only when the stage defines them (tomato mature).
- * Otherwise null: show raw value with no coloured band.
+ * Ambient day/night bounds only when the stage defines them (tomato stages
+ * that carry ambient bands). Otherwise null: show raw value with no coloured band.
  *
  * `timeZone` is the device IANA timezone — never browser local.
  */
@@ -229,29 +220,13 @@ export function getAmbientBoundsForProfile(
   lifecycleStage?: string | null,
   timeZone: string = DEFAULT_DEVICE_TIMEZONE,
 ): MetricBounds | null {
-  const cropKey = cropType ?? DEFAULT_CROP_TYPE;
-  const stageKey = lifecycleStage ?? DEFAULT_LIFECYCLE_STAGE;
-  const stage = CROP_PROFILES[cropKey]?.stages[stageKey];
-  if (!stage) {
-    return null;
-  }
+  const stage = getCropStage(cropType, lifecycleStage);
   if (
     stage.ambient_temp_day_min_c === undefined ||
     stage.ambient_temp_day_max_c === undefined ||
     stage.ambient_temp_night_min_c === undefined ||
     stage.ambient_temp_night_max_c === undefined
   ) {
-    // Tomato mature exposes ambient via aliases; prefer those when this is
-    // the tomato/mature stage even if CropStageBase typing omitted them.
-    if (
-      cropKey === DEFAULT_CROP_TYPE &&
-      stageKey === DEFAULT_LIFECYCLE_STAGE
-    ) {
-      const isDay = isDayPeriod(recordedAt, timeZone);
-      return isDay
-        ? { min: AMBIENT_TEMP_DAY_MIN_C, max: AMBIENT_TEMP_DAY_MAX_C }
-        : { min: AMBIENT_TEMP_NIGHT_MIN_C, max: AMBIENT_TEMP_NIGHT_MAX_C };
-    }
     return null;
   }
   const isDay = isDayPeriod(recordedAt, timeZone);
@@ -274,6 +249,12 @@ export type MetricStatus =
   | "error"
   | "unknown";
 
+/** Why a metric returned unknown / was left unscored. */
+export type MetricUnscoredReason =
+  | "no_value"
+  | "no_band"
+  | "needs_calibration";
+
 export interface MetricScore {
   status: MetricStatus;
   bounds: MetricBounds | null;
@@ -282,6 +263,22 @@ export interface MetricScore {
    * May be &lt;0 or &gt;1 when the value is outside the band. Null when unscored.
    */
   position: number | null;
+  /** Present when status is unknown (or when calibration is the gap). */
+  reason?: MetricUnscoredReason;
+  /**
+   * Percent depletion of available water when scored via soil moisture
+   * anchors (0 at field capacity, 100 at refill point).
+   */
+  depletionPct?: number | null;
+  /** Zone id when soil temp was scored via grape root-zone zones. */
+  zoneId?: string;
+  zoneLabel?: string;
+}
+
+/** Per-device HW-390 relative-saturation anchors for depletion scoring. */
+export interface SoilMoistureAnchors {
+  fieldCapacityPct: number | null;
+  refillPointPct: number | null;
 }
 
 const WATCH_FRACTION = 0.1;
@@ -290,6 +287,139 @@ function normalisedPosition(value: number, bounds: MetricBounds): number {
   const width = bounds.max - bounds.min;
   if (width === 0) return 0.5;
   return (value - bounds.min) / width;
+}
+
+export function anchorsAreComplete(
+  anchors: SoilMoistureAnchors | null | undefined,
+): anchors is {
+  fieldCapacityPct: number;
+  refillPointPct: number;
+} {
+  if (!anchors) return false;
+  const { fieldCapacityPct, refillPointPct } = anchors;
+  return (
+    typeof fieldCapacityPct === "number" &&
+    typeof refillPointPct === "number" &&
+    Number.isFinite(fieldCapacityPct) &&
+    Number.isFinite(refillPointPct) &&
+    fieldCapacityPct > refillPointPct
+  );
+}
+
+/**
+ * Percent depletion of available water between field capacity and refill.
+ * 0 at field capacity, 100 at refill point. Null when anchors incomplete.
+ */
+export function moistureDepletionPct(
+  value: number,
+  anchors: SoilMoistureAnchors,
+): number | null {
+  if (!anchorsAreComplete(anchors)) return null;
+  const span = anchors.fieldCapacityPct - anchors.refillPointPct;
+  if (span <= 0) return null;
+  return ((anchors.fieldCapacityPct - value) / span) * 100;
+}
+
+/**
+ * Score moisture against user-supplied FC / refill anchors (depletion),
+ * not against a crop percentage band. Status stays unknown until both
+ * anchors are populated — never invent defaults.
+ */
+export function scoreMoistureDepletion(
+  value: number | null | undefined,
+  anchors: SoilMoistureAnchors | null | undefined,
+): MetricScore {
+  if (value === null || value === undefined) {
+    return {
+      status: "unknown",
+      bounds: null,
+      position: null,
+      reason: "no_value",
+    };
+  }
+  if (!anchorsAreComplete(anchors)) {
+    return {
+      status: "unknown",
+      bounds: null,
+      position: null,
+      reason: "needs_calibration",
+    };
+  }
+
+  const bounds: MetricBounds = {
+    min: anchors.refillPointPct,
+    max: anchors.fieldCapacityPct,
+  };
+  const depletion = moistureDepletionPct(value, anchors);
+  const position = normalisedPosition(value, bounds);
+  const width = bounds.max - bounds.min;
+  const watchMargin = width * WATCH_FRACTION;
+
+  // Above field capacity: gravitational water, not plant-available.
+  // Definitional (METER Group plant-available water); no invented literature %.
+  if (value > anchors.fieldCapacityPct) {
+    return {
+      status: "watch",
+      bounds,
+      position,
+      depletionPct: depletion,
+    };
+  }
+  // At or past the grower's refill point.
+  if (value <= anchors.refillPointPct) {
+    return {
+      status: "warn",
+      bounds,
+      position,
+      depletionPct: depletion,
+    };
+  }
+  // Approaching refill within the existing 10% watch margin.
+  if (value <= anchors.refillPointPct + watchMargin) {
+    return {
+      status: "watch",
+      bounds,
+      position,
+      depletionPct: depletion,
+    };
+  }
+  return {
+    status: "ok",
+    bounds,
+    position,
+    depletionPct: depletion,
+  };
+}
+
+/**
+ * Score grape root-zone temperature via the graded zone table.
+ * Bypasses scoring_semantic restraint — cold soil is a genuine problem
+ * even on mature grape_wine (restraint is a nitrogen/vigour concept).
+ */
+export function scoreGrapeSoilTemp(
+  value: number | null | undefined,
+): MetricScore {
+  if (value === null || value === undefined) {
+    return {
+      status: "unknown",
+      bounds: null,
+      position: null,
+      reason: "no_value",
+    };
+  }
+  const zone = grapeRootZoneTempZone(value);
+  const idealBounds: MetricBounds = {
+    // Zhang et al. 2024, Horticulturae 10(3):245: optimal 21-24°C
+    min: 21.0,
+    max: 24.0,
+  };
+  return {
+    status: zone.severity,
+    bounds: idealBounds,
+    position: normalisedPosition(value, idealBounds),
+    zoneId: zone.id,
+    zoneLabel: zone.label,
+  };
 }
 
 /**
@@ -305,7 +435,12 @@ export function scoreMetricValue(
   options?: { displayOnly?: boolean },
 ): MetricScore {
   if (value === null || value === undefined) {
-    return { status: "unknown", bounds: bounds ?? null, position: null };
+    return {
+      status: "unknown",
+      bounds: bounds ?? null,
+      position: null,
+      reason: "no_value",
+    };
   }
 
   if (options?.displayOnly) {
@@ -313,7 +448,12 @@ export function scoreMetricValue(
   }
 
   if (!bounds) {
-    return { status: "unknown", bounds: null, position: null };
+    return {
+      status: "unknown",
+      bounds: null,
+      position: null,
+      reason: "no_band",
+    };
   }
 
   const position = normalisedPosition(value, bounds);
@@ -338,6 +478,61 @@ export function scoreMetricValue(
     return { status: "watch", bounds, position };
   }
   return { status: "ok", bounds, position };
+}
+
+/**
+ * Profile-aware scoring entry point used by the Dashboard.
+ * Routes grape soil temp through graded zones (bypassing restraint) and
+ * grape moisture through depletion anchors when the stage has no band.
+ */
+export function scoreMetricForProfile(
+  key: MetricKey,
+  value: number | null | undefined,
+  cropType: string,
+  lifecycleStage: string,
+  recordedAt: string | null | undefined,
+  timeZone: string,
+  options?: {
+    derived?: boolean;
+    anchors?: SoilMoistureAnchors | null;
+  },
+): MetricScore {
+  const semantic = getCropStage(cropType, lifecycleStage).scoring_semantic;
+  if (options?.derived || key === "moisture_raw") {
+    return scoreMetricValue(value, null, semantic, { displayOnly: true });
+  }
+
+  if (key === "soil_temp_c" && isGrapeCrop(cropType)) {
+    return scoreGrapeSoilTemp(value);
+  }
+
+  if (key === "ambient_temp_c") {
+    const at = recordedAt ?? new Date().toISOString();
+    const bounds = getAmbientBoundsForProfile(
+      at,
+      cropType,
+      lifecycleStage,
+      timeZone,
+    );
+    return scoreMetricValue(value, bounds, semantic);
+  }
+
+  if (key === "moisture_pct") {
+    const bandBounds = getMetricBoundsForProfile(
+      key,
+      cropType,
+      lifecycleStage,
+    );
+    // Tomato (and any crop with a moisture band) keeps band scoring.
+    if (bandBounds) {
+      return scoreMetricValue(value, bandBounds, semantic);
+    }
+    // Grape (no band): depletion against per-device anchors only.
+    return scoreMoistureDepletion(value, options?.anchors ?? null);
+  }
+
+  const bounds = getMetricBoundsForProfile(key, cropType, lifecycleStage);
+  return scoreMetricValue(value, bounds, semantic);
 }
 
 /** Resolve a metric value from a reading, including derived metrics. */

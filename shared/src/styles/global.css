@@ -1912,6 +1912,11 @@ body {
   margin-top: 0.25rem;
 }
 
+.metric-depletion-line {
+  font-size: 0.72rem;
+  margin: 0.15rem 0 0;
+}
+
 .link-btn {
   background: transparent;
   border: none;
@@ -2018,6 +2023,38 @@ body {
 }
 
 .plant-profile-season-note {
+  font-size: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.plant-profile-reference {
+  margin-top: 1rem;
+  max-width: 40rem;
+}
+
+.plant-profile-reference p {
+  margin: 0.35rem 0;
+  font-size: 0.8rem;
+}
+
+.cultivar-reference-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5rem 0 0.75rem;
+  font-size: 0.8rem;
+}
+
+.cultivar-reference-table th,
+.cultivar-reference-table td {
+  text-align: left;
+  padding: 0.25rem 0.5rem 0.25rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.cultivar-reference-table caption {
+  text-align: left;
+  margin-bottom: 0.25rem;
+}
   font-size: 0.75rem;
   margin-top: 0.5rem;
 }

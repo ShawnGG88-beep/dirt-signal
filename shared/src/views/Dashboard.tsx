@@ -41,21 +41,24 @@ import { eventTypeLabel } from "../lib/eventTypes";
 import {
   DEFAULT_CROP_TYPE,
   DEFAULT_LIFECYCLE_STAGE,
+  TOMATO_GDD_STAGE_BANDS_PROVENANCE,
+  getGrapeWineGddProvenance,
   getScoringSemantic,
   SAMPLING_LIMITATIONS,
   type ScoringSemantic,
 } from "../lib/growingConstants";
+import { formatGrapeWineStageLine, formatTomatoStageLine } from "../lib/phenology";
 import {
   formatMetricValue,
-  getAmbientBoundsForProfile,
   getMetricBoundsForProfile,
   METRICS,
-  scoreMetricValue,
+  scoreMetricForProfile,
   type MetricDef,
   type MetricKey,
   type MetricScore,
   type MetricStatus,
   type RangePreset,
+  type SoilMoistureAnchors,
 } from "../lib/metrics";
 import { useAlertPoll } from "../lib/useAlertPoll";
 
@@ -70,24 +73,24 @@ function scoreForCard(
   lifecycleStage: string,
   recordedAt: string | null | undefined,
   timeZone: string,
-  derived?: boolean,
+  derived: boolean | undefined,
+  anchors: SoilMoistureAnchors | null,
 ): MetricScore {
-  const semantic = getScoringSemantic(cropType, lifecycleStage);
-  if (derived || key === "moisture_raw") {
-    return scoreMetricValue(value, null, semantic, { displayOnly: true });
-  }
-  if (key === "ambient_temp_c") {
-    const at = recordedAt ?? new Date().toISOString();
-    const bounds = getAmbientBoundsForProfile(
-      at,
-      cropType,
-      lifecycleStage,
-      timeZone,
-    );
-    return scoreMetricValue(value, bounds, semantic);
-  }
-  const bounds = getMetricBoundsForProfile(key, cropType, lifecycleStage);
-  return scoreMetricValue(value, bounds, semantic);
+  return scoreMetricForProfile(
+    key,
+    value,
+    cropType,
+    lifecycleStage,
+    recordedAt,
+    timeZone,
+    { derived, anchors },
+  );
+}
+
+function statusDisplayText(score: MetricScore, isNull: boolean): string {
+  if (isNull) return STATUS_TEXT.unknown;
+  if (score.reason === "needs_calibration") return "needs field calibration";
+  return STATUS_TEXT[score.status];
 }
 
 function sparkDelta(
@@ -136,6 +139,11 @@ function PrimaryMetricCard({
   const delta = sparkDelta(sparkValues, metric.unit);
   const isNull = value === null || value === undefined;
   const status: MetricStatus = isNull ? "unknown" : score.status;
+  const statusText = statusDisplayText(score, isNull);
+  const depletionLabel =
+    typeof score.depletionPct === "number" && Number.isFinite(score.depletionPct)
+      ? `${Math.round(score.depletionPct)}% depleted`
+      : score.zoneLabel ?? null;
 
   function activate() {
     onOpen();
@@ -155,7 +163,7 @@ function PrimaryMetricCard({
       tabIndex={0}
       onClick={activate}
       onKeyDown={onKeyDown}
-      aria-label={`${metric.label}: ${formatMetricValue(value, metric.unit)}, ${STATUS_TEXT[status]}`}
+      aria-label={`${metric.label}: ${formatMetricValue(value, metric.unit)}, ${statusText}`}
     >
       <div className="metric-header">
         <span className="metric-label">{metric.label}</span>
@@ -179,8 +187,11 @@ function PrimaryMetricCard({
         <span className="metric-status-glyph" aria-hidden="true">
           {STATUS_GLYPH[status]}
         </span>
-        <span className="metric-status-text">{STATUS_TEXT[status]}</span>
+        <span className="metric-status-text">{statusText}</span>
       </div>
+      {depletionLabel && !isNull && score.bounds !== null && (
+        <p className="metric-depletion-line muted">{depletionLabel}</p>
+      )}
       <div className="metric-spark">
         {rangeError ? (
           <button
@@ -225,6 +236,7 @@ function ContextMetricCard({
   const isNull = value === null || value === undefined;
   const derived = metric.derived === true;
   const status: MetricStatus = isNull ? "unknown" : score.status;
+  const statusText = statusDisplayText(score, isNull);
 
   function onKeyDown(e: ReactKeyboardEvent) {
     if (e.key === "Enter" || e.key === " ") {
@@ -243,7 +255,7 @@ function ContextMetricCard({
       aria-label={
         derived
           ? `${metric.label}: ${formatMetricValue(value, metric.unit)}`
-          : `${metric.label}: ${formatMetricValue(value, metric.unit)}, ${STATUS_TEXT[status]}`
+          : `${metric.label}: ${formatMetricValue(value, metric.unit)}, ${statusText}`
       }
     >
       <div className="metric-header">
@@ -253,7 +265,7 @@ function ContextMetricCard({
             <span className="metric-status-glyph" aria-hidden="true">
               {STATUS_GLYPH[status]}
             </span>
-            <span className="metric-status-text">{STATUS_TEXT[status]}</span>
+            <span className="metric-status-text">{statusText}</span>
           </div>
         )}
       </div>
@@ -394,6 +406,11 @@ export function Dashboard({
   );
   const [timeZone, setTimeZone] = useState(DEFAULT_DEVICE_TIMEZONE);
   const [seasonStartDate, setSeasonStartDate] = useState<string | null>(null);
+  const [soilTexture, setSoilTexture] = useState<string | null>("loam");
+  const [cultivar, setCultivar] = useState<string | null>(null);
+  const [soilAnchors, setSoilAnchors] = useState<SoilMoistureAnchors | null>(
+    null,
+  );
   const [cumulativeGdd, setCumulativeGdd] = useState<number | null>(null);
   const [gddDaysExcluded, setGddDaysExcluded] = useState(0);
   const [gddUnavailable, setGddUnavailable] = useState<string | null>(
@@ -479,6 +496,12 @@ export function Dashboard({
         setLifecycleStage(latest.lifecycle_stage ?? DEFAULT_LIFECYCLE_STAGE);
         setTimeZone(latest.timezone ?? DEFAULT_DEVICE_TIMEZONE);
         setSeasonStartDate(latest.season_start_date ?? null);
+        setSoilTexture(latest.soil_texture ?? "loam");
+        setCultivar(latest.cultivar ?? null);
+        setSoilAnchors({
+          fieldCapacityPct: latest.soil_field_capacity_raw ?? null,
+          refillPointPct: latest.soil_refill_point_raw ?? null,
+        });
         setLatestError(null);
       })
       .catch((err) => {
@@ -521,8 +544,19 @@ export function Dashboard({
         const crop = latest.crop_type ?? DEFAULT_CROP_TYPE;
         const stage = latest.lifecycle_stage ?? DEFAULT_LIFECYCLE_STAGE;
         const bounds = getMetricBoundsForProfile("moisture_pct", crop, stage);
+        // Grape has no moisture band; project toward the grower's refill point
+        // when both anchors are set. Never invent a default lower bound.
+        const refill = latest.soil_refill_point_raw;
+        const fc = latest.soil_field_capacity_raw;
+        const moistureLowerBound =
+          bounds?.min ??
+          (typeof refill === "number" &&
+          typeof fc === "number" &&
+          fc > refill
+            ? refill
+            : null);
         const result = projectDrydown(range.readings, eventsRes.events, {
-          moistureLowerBound: bounds?.min ?? null,
+          moistureLowerBound,
           now: new Date(),
         });
         if (result.projection && result.projection.hours_to_lower_bound > 0) {
@@ -678,6 +712,33 @@ export function Dashboard({
                 {gddDaysExcluded > 0
                   ? ` · ${gddDaysExcluded}d excluded (sparse)`
                   : ""}
+                {cropType === "grape_wine" && cumulativeGdd != null ? (
+                  <>
+                    {" "}
+                    · current stage:{" "}
+                    {formatGrapeWineStageLine(cumulativeGdd, cultivar)}
+                    <span
+                      className="dashboard-gdd-note"
+                      title={getGrapeWineGddProvenance(cultivar)}
+                    >
+                      {" "}
+                      ({getGrapeWineGddProvenance(cultivar)})
+                    </span>
+                  </>
+                ) : null}
+                {cropType === "tomato" && cumulativeGdd != null ? (
+                  <>
+                    {" "}
+                    · GDD-inferred stage: {formatTomatoStageLine(cumulativeGdd)}
+                    <span
+                      className="dashboard-gdd-note"
+                      title={TOMATO_GDD_STAGE_BANDS_PROVENANCE}
+                    >
+                      {" "}
+                      ({TOMATO_GDD_STAGE_BANDS_PROVENANCE})
+                    </span>
+                  </>
+                ) : null}
                 <span className="dashboard-gdd-note" title="Indoor degree days under artificial light are not comparable to field GDD / Winkler.">
                   {" "}
                   (device degree days)
@@ -732,6 +793,7 @@ export function Dashboard({
               reading?.recorded_at,
               timeZone,
               metric.derived,
+              soilAnchors,
             );
             return (
               <div key={metric.key} className="primary-metric-wrap">
@@ -765,6 +827,7 @@ export function Dashboard({
               reading?.recorded_at,
               timeZone,
               metric.derived,
+              soilAnchors,
             );
             return (
               <ContextMetricCard
@@ -864,10 +927,20 @@ export function Dashboard({
               cropType={cropType}
               lifecycleStage={lifecycleStage}
               seasonStartDate={seasonStartDate}
-              onProfileSaved={(nextCrop, nextStage, nextSeason) => {
+              soilTexture={soilTexture}
+              cultivar={cultivar}
+              onProfileSaved={(
+                nextCrop,
+                nextStage,
+                nextSeason,
+                nextTexture,
+                nextCultivar,
+              ) => {
                 setCropType(nextCrop);
                 setLifecycleStage(nextStage);
                 if (nextSeason !== undefined) setSeasonStartDate(nextSeason);
+                if (nextTexture !== undefined) setSoilTexture(nextTexture);
+                if (nextCultivar !== undefined) setCultivar(nextCultivar);
                 onProfileChanged();
                 setProfileOpen(false);
                 void refresh();

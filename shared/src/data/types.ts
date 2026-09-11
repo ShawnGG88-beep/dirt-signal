@@ -39,6 +39,12 @@ export interface LatestReadingResponse {
   device_id?: string | null;
   timezone?: string;
   season_start_date?: string | null;
+  soil_texture?: string | null;
+  cultivar?: string | null;
+  /** HW-390 relative saturation % at field capacity. Null until calibrated. */
+  soil_field_capacity_raw?: number | null;
+  /** HW-390 relative saturation % at irrigation refill point. Null until set. */
+  soil_refill_point_raw?: number | null;
 }
 
 export interface ReadingsRangeResponse {
@@ -52,6 +58,10 @@ export interface ReadingsRangeResponse {
   device_id?: string | null;
   timezone?: string;
   season_start_date?: string | null;
+  soil_texture?: string | null;
+  cultivar?: string | null;
+  soil_field_capacity_raw?: number | null;
+  soil_refill_point_raw?: number | null;
 }
 
 export interface DeviceResponse {
@@ -61,6 +71,10 @@ export interface DeviceResponse {
   lifecycle_stage: string;
   timezone?: string;
   season_start_date?: string | null;
+  soil_texture?: string | null;
+  cultivar?: string | null;
+  soil_field_capacity_raw?: number | null;
+  soil_refill_point_raw?: number | null;
 }
 
 export interface ProfileStageOption {
@@ -68,10 +82,16 @@ export interface ProfileStageOption {
   display_name: string;
 }
 
+export interface ProfileCultivarOption {
+  cultivar: string;
+  display_name: string;
+}
+
 export interface ProfileCropOption {
   crop_type: string;
   display_name: string;
   lifecycle_stages: ProfileStageOption[];
+  cultivars?: ProfileCultivarOption[];
 }
 
 export interface DeviceProfileOptionsResponse {
@@ -149,7 +169,12 @@ export type AlertRuleType =
   | "approaching_bound"
   | "collector_silence"
   | "irrigation_due"
-  | "disease_pressure";
+  | "disease_pressure"
+  | "forecast_chill_risk"
+  | "tomato_early_blight"
+  | "tomato_late_blight"
+  | "tomato_powdery_mildew"
+  | "tomato_moisture_cracking";
 
 export interface AlertEvent {
   id: string;
@@ -234,6 +259,7 @@ export interface DailyAggregatesResponse {
   season_start_date: string | null;
   crop_type: string;
   lifecycle_stage: string;
+  cultivar?: string | null;
   gdd_base_c: number;
   from_at: string;
   to_at: string;
@@ -252,4 +278,42 @@ export interface AlertEvaluateResponse {
   evaluated: number;
   opened: number;
   closed: number;
+}
+
+export interface DailyAdvisoryDigestResponse {
+  device_name: string;
+  computed_at: string | null;
+  digest: DailyAdvisoryDigestPayload | null;
+}
+
+export interface DeviceAdvisoriesDailyRow {
+  device_id: string;
+  computed_at: string;
+  digest: DailyAdvisoryDigestPayload;
+}
+
+export interface DailyAdvisoryDigestPayload {
+  device_id: string;
+  crop_type: string;
+  lifecycle_stage: string;
+  evaluated_at: string;
+  spray_window: {
+    found: boolean;
+    window_start: string | null;
+    window_end: string | null;
+    message: string;
+  };
+  capture_suggestion: {
+    suggested_at: string | null;
+    cloud_cover: number | null;
+    stability_label: string;
+    note: string;
+  };
+  tomato: Record<string, unknown> | null;
+}
+
+/** @deprecated Use DailyAdvisoryDigestPayload */
+export interface DailyAdvisoryDigestResponseLegacy {
+  device_name: string;
+  digest: DailyAdvisoryDigestPayload;
 }

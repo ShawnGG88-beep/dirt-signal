@@ -42,7 +42,55 @@ class ScoringSemantic(str, Enum):
 
 
 DEFAULT_CROP_TYPE = "tomato"
+# Shared null-coalesce for grape devices and missing DB rows. Grape_wine and
+# grape_table still use "mature" as a real stage. Tomato no longer does.
 DEFAULT_LIFECYCLE_STAGE = "mature"
+
+# Tomato scoring-band fallback when the stored stage is missing, unknown, or
+# the retired tomato value "mature". Same numeric bands as the old tomato
+# mature stage.
+TOMATO_FALLBACK_LIFECYCLE_STAGE = "vegetative_growth"
+
+TOMATO_LIFECYCLE_STAGES: tuple[str, ...] = (
+    "germination",
+    "seedling",
+    "vegetative_growth",
+    "flowering",
+    "fruit_development",
+    "ripening",
+)
+
+# Lookup-only aliases for leftover DB values. Not selectable in the picker.
+TOMATO_RETIRED_STAGE_ALIASES: dict[str, str] = {
+    "mature": "vegetative_growth",
+    "fruiting": "fruit_development",
+}
+
+TOMATO_GDD_ACCUMULATION_START_STAGE = "seedling"
+
+# °C·d thresholds, base 10°C, accumulated from the start of seedling (not
+# germination, and not from vegetative_growth). Germination and seedling have
+# no GDD threshold.
+TOMATO_GDD_STAGE_BANDS: dict[str, float] = {
+    "vegetative_growth": 585.0,
+    "flowering": 897.0,
+    "fruit_development": 1216.0,
+    "ripening": 1568.0,
+}
+
+TOMATO_GDD_STAGE_BANDS_PROVENANCE: str = (
+    "Northern Hemisphere reference data, provisional pending local calibration. "
+    "Single-study reference (California, one transplant date/season)."
+)
+
+TOMATO_LIFECYCLE_STAGE_LABELS: dict[str, str] = {
+    "germination": "Germination",
+    "seedling": "Seedling",
+    "vegetative_growth": "Vegetative growth",
+    "flowering": "Flowering",
+    "fruit_development": "Fruit development",
+    "ripening": "Ripening",
+}
 
 # ---------------------------------------------------------------------------
 # Shared sampling limitations (any grape device)
@@ -86,6 +134,82 @@ SAMPLING_LIMITATIONS: list[str] = [
 ]
 
 
+def _tomato_stage(**overrides: Any) -> dict[str, Any]:
+    """Shared tomato scoring bands, with per-stage notes and moisture overrides.
+
+    Numeric bands match the former tomato "mature" stage unless a stage
+    overrides them (fruit_development / ripening raise the moisture band).
+    """
+    stage: dict[str, Any] = {
+        "scoring_semantic": ScoringSemantic.OPTIMAL_BAND.value,
+        "sources": [
+            (
+                "General horticultural references (multiple, uncited, "
+                "common consensus ranges for tomato growing)"
+            ),
+            (
+                "Hillock, D.A. and Rebek, E. \"Growing Tomatoes in the "
+                "Home Garden.\" Oklahoma Cooperative Extension Service, "
+                "HLA-6012. Oklahoma State University."
+            ),
+        ],
+        "ph_min": 6.0,
+        "ph_max": 6.8,
+        "ph_ideal": 6.5,
+        "ph_status": "target",
+        "ph_units": "pH units",
+        "ph_method": "BNC pH probe (field)",
+        "moisture_min_pct": 60.0,
+        "moisture_max_pct": 80.0,
+        "moisture_status": "target",
+        "moisture_units": "calibrated %",
+        "moisture_method": "dielectric / capacitive soil moisture probe",
+        "soil_temp_min_c": 10.0,
+        "soil_temp_planting_min_c": 15.5,
+        "soil_temp_ideal_min_c": 18.0,
+        "soil_temp_ideal_max_c": 24.0,
+        "soil_temp_max_c": 32.0,
+        "soil_temp_status": "target",
+        "soil_temp_units": "deg C",
+        "soil_temp_method": "soil temperature probe",
+        "ambient_temp_day_min_c": 21.0,
+        "ambient_temp_day_max_c": 27.0,
+        "ambient_temp_night_min_c": 15.5,
+        "ambient_temp_night_max_c": 21.0,
+        "ambient_temp_fruit_set_ceiling_c": 33.0,
+        "ambient_temp_status": "target",
+        "ambient_temp_units": "deg C",
+        "ambient_temp_method": "ambient air sensor",
+        "humidity_min_pct": 65.0,
+        "humidity_max_pct": 75.0,
+        "humidity_status": "target",
+        "humidity_units": "% RH",
+        "humidity_method": "ambient humidity sensor",
+        "ec_min_ms_cm": 2.0,
+        "ec_max_ms_cm": 3.5,
+        "ec_status": "target",
+        "ec_units": "mS/cm",
+        "ec_method": "RS485 EC probe (direct)",
+        "npk_levels": ["depleted", "low", "medium", "high", "surplus"],
+        "n_target": "low",
+        "p_target": "high",
+        "k_target": "high",
+        "npk_status": "target",
+        "npk_units": "categorical level (not ppm)",
+        "npk_method": (
+            "RS485 estimate from EC/dielectric; calibrate against "
+            "soil_tests chemical strips"
+        ),
+        "blossom_end_rot_note": (
+            "BER linked to moisture fluctuation (Oklahoma State "
+            "University HLA-6012); validate against moisture swings "
+            "outside the target band."
+        ),
+    }
+    stage.update(overrides)
+    return stage
+
+
 # ---------------------------------------------------------------------------
 # Crop profiles keyed by crop_type -> stages -> lifecycle_stage
 # ---------------------------------------------------------------------------
@@ -100,103 +224,69 @@ CROP_PROFILES: dict[str, dict[str, Any]] = {
         # it can diverge later without a refactor.
         "gdd_base_c": 10.0,
         "stages": {
-            "mature": {
-                "scoring_semantic": ScoringSemantic.OPTIMAL_BAND.value,
-                "sources": [
-                    (
-                        "General horticultural references (multiple, uncited, "
-                        "common consensus ranges for tomato growing)"
-                    ),
-                    (
-                        "Hillock, D.A. and Rebek, E. \"Growing Tomatoes in the "
-                        "Home Garden.\" Oklahoma Cooperative Extension Service, "
-                        "HLA-6012. Oklahoma State University."
-                    ),
-                ],
-                # Soil pH
-                # Oklahoma State University HLA-6012: "prefer deep, fertile,
-                # well-drained soil ... slightly acidic (pH of about 6.5)"
-                "ph_min": 6.0,
-                "ph_max": 6.8,
-                "ph_ideal": 6.5,
-                "ph_status": "target",
-                "ph_units": "pH units",
-                "ph_method": "BNC pH probe (field)",
-                # Soil moisture, calibrated percentage (relative to your
-                # specific soil and sensor calibration curve, not an absolute
-                # field capacity measurement)
-                "moisture_min_pct": 60.0,
-                "moisture_max_pct": 80.0,
-                "moisture_status": "target",
-                "moisture_units": "calibrated %",
-                "moisture_method": "dielectric / capacitive soil moisture probe",
-                # Soil temperature
-                # Oklahoma State University HLA-6012: tomatoes should go in the
-                # ground when soil temperature is above 60F (~15.5C);
-                # temperatures below 50F (~10C) impair growth entirely
-                "soil_temp_min_c": 10.0,  # hard floor, growth impaired below
-                "soil_temp_planting_min_c": 15.5,  # minimum to transplant
-                "soil_temp_ideal_min_c": 18.0,
-                "soil_temp_ideal_max_c": 24.0,
-                "soil_temp_max_c": 32.0,  # root stress above this
-                "soil_temp_status": "target",
-                "soil_temp_units": "deg C",
-                "soil_temp_method": "soil temperature probe",
-                # Ambient temperature
-                # Oklahoma State University HLA-6012: fruit set fails when
-                # night temp is below ~60F (15.5C) or above ~70F (21C), or
-                # when day temp is consistently above ~92F (33C)
-                "ambient_temp_day_min_c": 21.0,
-                "ambient_temp_day_max_c": 27.0,
-                "ambient_temp_night_min_c": 15.5,
-                "ambient_temp_night_max_c": 21.0,
-                "ambient_temp_fruit_set_ceiling_c": 33.0,
-                "ambient_temp_status": "target",
-                "ambient_temp_units": "deg C",
-                "ambient_temp_method": "ambient air sensor",
-                # Ambient humidity
-                "humidity_min_pct": 65.0,
-                "humidity_max_pct": 75.0,
-                "humidity_status": "target",
-                "humidity_units": "% RH",
-                "humidity_method": "ambient humidity sensor",
-                # Electrical conductivity (once an EC-capable sensor is added)
-                "ec_min_ms_cm": 2.0,
-                "ec_max_ms_cm": 3.5,
-                "ec_status": "target",
-                "ec_units": "mS/cm",
-                "ec_method": "RS485 EC probe (direct)",
-                # N, P, K categorical levels
-                # Oklahoma State University HLA-6012: "tomatoes prefer a
-                # fertilizer low in nitrogen, high in phosphorus, and medium
-                # to high in potassium" (e.g. 10-20-10 ratio)
-                # These are directional targets, not numeric bounds, given the
-                # sensor estimation caveat above.
-                "npk_levels": ["depleted", "low", "medium", "high", "surplus"],
-                "n_target": "low",  # low to moderate; surplus delays fruit set
-                "p_target": "high",
-                "k_target": "high",  # especially during fruiting
-                "npk_status": "target",
-                "npk_units": "categorical level (not ppm)",
-                "npk_method": (
-                    "RS485 estimate from EC/dielectric; calibrate against "
-                    "soil_tests chemical strips"
+            "germination": _tomato_stage(
+                typical_duration_note=(
+                    "Typical duration 5-10 days at 21-27°C soil temperature. "
+                    "Informational only, not an enforced boundary."
                 ),
-                # Known physiological risk: blossom end rot
-                # Oklahoma State University HLA-6012: BER results from calcium
-                # deficiency in young fruit "due to fluctuations in available
-                # moisture," occurring when soil is either too dry or
-                # excessively wet. A useful validation target: if moisture
-                # readings swing repeatedly outside moisture_min_pct /
-                # moisture_max_pct and BER is later observed on the plant,
-                # that is a citable link between sensor data and a real
-                # outcome for the case study.
-                "blossom_end_rot_note": (
-                    "BER linked to moisture fluctuation (Oklahoma State "
-                    "University HLA-6012); validate against moisture swings "
-                    "outside the target band."
+                stage_note=(
+                    "Germination: no GDD threshold and no GDD accumulation. "
+                    "Seed-tray germination is usually complete before an outdoor "
+                    "sensor is measuring the plant."
                 ),
-            },
+            ),
+            "seedling": _tomato_stage(
+                typical_duration_note=(
+                    "Typical duration 2-3 weeks after germination until true "
+                    "leaves establish. Informational only, not an enforced boundary."
+                ),
+                stage_note=(
+                    "Seedling: no GDD threshold to check against, but GDD "
+                    "accumulation starts here (base 10°C), once the plant is "
+                    "potted nearer its growing environment."
+                ),
+            ),
+            "vegetative_growth": _tomato_stage(
+                gdd_threshold_c_days=585.0,
+                stage_note=(
+                    "Vegetative growth: GDD threshold 585 °C·d (base 10°C, "
+                    "accumulated from the start of seedling). "
+                    + TOMATO_GDD_STAGE_BANDS_PROVENANCE
+                ),
+            ),
+            "flowering": _tomato_stage(
+                gdd_threshold_c_days=897.0,
+                stage_note=(
+                    "Flowering: blossom-drop risk uses forecast night lows "
+                    "≤13°C when this stage is selected. GDD threshold 897 °C·d "
+                    "(base 10°C, accumulated from the start of seedling). "
+                    + TOMATO_GDD_STAGE_BANDS_PROVENANCE
+                ),
+            ),
+            "fruit_development": _tomato_stage(
+                moisture_min_pct=65.0,
+                moisture_max_pct=85.0,
+                gdd_threshold_c_days=1216.0,
+                blossom_end_rot_note=(
+                    "Fruit development: moisture stability advisories reference "
+                    "25-38 mm/week and cracking/BER influx after dry spells."
+                ),
+                stage_note=(
+                    "Fruit development: GDD threshold 1216 °C·d (base 10°C, "
+                    "accumulated from the start of seedling). "
+                    + TOMATO_GDD_STAGE_BANDS_PROVENANCE
+                ),
+            ),
+            "ripening": _tomato_stage(
+                moisture_min_pct=65.0,
+                moisture_max_pct=85.0,
+                gdd_threshold_c_days=1568.0,
+                stage_note=(
+                    "Ripening: GDD threshold 1568 °C·d (base 10°C, accumulated "
+                    "from the start of seedling). "
+                    + TOMATO_GDD_STAGE_BANDS_PROVENANCE
+                ),
+            ),
         },
     },
     # ------------------------------------------------------------------
@@ -206,8 +296,10 @@ CROP_PROFILES: dict[str, dict[str, Any]] = {
         "display_name": "Wine grape",
         "gdd_base_c": 10.0,
         # Zhao et al. 2019 tested five major grape varieties and found no
-        # significant differences in soil OM or available nutrients. Profiles
-        # split by production goal and lifecycle stage only, never cultivar.
+        # significant differences in soil OM or available nutrients. Nutrient
+        # profiles stay split by production goal and lifecycle stage only.
+        # Cultivar-specific phenology, frost and water-stress reference data
+        # live in GRAPE_WINE_CULTIVAR_PROFILES, not here.
         "stages": {
             "establishment": {
                 "scoring_semantic": ScoringSemantic.OPTIMAL_BAND.value,
@@ -363,9 +455,23 @@ CROP_PROFILES: dict[str, dict[str, Any]] = {
                     "undesirable for wine. Harm exists on both sides of the "
                     "band."
                 ),
+                # Zhang et al. 2024, Horticulturae 10(3):245: optimal 21-24°C.
+                # Same band for establishment and mature — no sourced reason
+                # to differentiate.
+                "soil_temp_ideal_min_c": 21.0,
+                "soil_temp_ideal_max_c": 24.0,
+                # Rosen 2014 ph_target range [6.0, 7.0] — flat keys for
+                # get_metric_bounds parity with shared growingConstants.ts
+                "ph_min": 6.0,
+                "ph_max": 7.0,
             },
             "mature": {
                 "scoring_semantic": ScoringSemantic.RESTRAINT.value,
+                # Zhang et al. 2024, Horticulturae 10(3):245: optimal 21-24°C.
+                # Same band for establishment and mature — no sourced reason
+                # to differentiate.
+                "soil_temp_ideal_min_c": 21.0,
+                "soil_temp_ideal_max_c": 24.0,
                 "source": (
                     "Gonzalez-Maldonado et al. 2026, European Journal of Soil "
                     "Science 77:e70265 (32 sites, 384 samples, Napa Valley, "
@@ -551,23 +657,67 @@ CROP_PROFILES: dict[str, dict[str, Any]] = {
 }
 
 
+def canonical_tomato_lifecycle_stage(lifecycle_stage: str | None) -> str | None:
+    """Map retired tomato stage names; leave grape and unknown keys untouched."""
+    if lifecycle_stage is None:
+        return None
+    return TOMATO_RETIRED_STAGE_ALIASES.get(lifecycle_stage, lifecycle_stage)
+
+
 def get_crop_stage(
     crop_type: str | None = None,
     lifecycle_stage: str | None = None,
 ) -> dict[str, Any]:
     """Resolve reference data for (crop_type, lifecycle_stage).
 
-    Falls back to (tomato, mature) when either key is missing or unknown.
+    Tomato lookups map retired names (mature, fruiting) onto the new six-stage
+    model. Missing or unknown keys fall back to tomato vegetative_growth
+    (the scoring-band equivalent of the old tomato mature stage). Grape still
+    uses its own "mature" stage when that key is present on the grape profile.
     """
     crop_key = crop_type or DEFAULT_CROP_TYPE
     stage_key = lifecycle_stage or DEFAULT_LIFECYCLE_STAGE
+    if crop_key == "tomato":
+        stage_key = canonical_tomato_lifecycle_stage(stage_key) or (
+            TOMATO_FALLBACK_LIFECYCLE_STAGE
+        )
     crop = CROP_PROFILES.get(crop_key)
     if crop is None:
-        return CROP_PROFILES[DEFAULT_CROP_TYPE]["stages"][DEFAULT_LIFECYCLE_STAGE]
+        return CROP_PROFILES[DEFAULT_CROP_TYPE]["stages"][
+            TOMATO_FALLBACK_LIFECYCLE_STAGE
+        ]
     stage = crop["stages"].get(stage_key)
     if stage is None:
-        return CROP_PROFILES[DEFAULT_CROP_TYPE]["stages"][DEFAULT_LIFECYCLE_STAGE]
+        if crop_key == "tomato":
+            return crop["stages"][TOMATO_FALLBACK_LIFECYCLE_STAGE]
+        return CROP_PROFILES[DEFAULT_CROP_TYPE]["stages"][
+            TOMATO_FALLBACK_LIFECYCLE_STAGE
+        ]
     return stage
+
+
+def tomato_gdd_accumulation_active(lifecycle_stage: str | None) -> bool:
+    """True when tomato GDD should accumulate (seedling and later)."""
+    canonical = canonical_tomato_lifecycle_stage(lifecycle_stage)
+    if canonical not in TOMATO_LIFECYCLE_STAGES:
+        return False
+    start = TOMATO_LIFECYCLE_STAGES.index(TOMATO_GDD_ACCUMULATION_START_STAGE)
+    return TOMATO_LIFECYCLE_STAGES.index(canonical) >= start
+
+
+def should_accumulate_gdd(
+    crop_type: str | None = None,
+    lifecycle_stage: str | None = None,
+) -> bool:
+    """Grape always accumulates once season_start_date is set.
+
+    Tomato accumulates from seedling onward, including leftover DB aliases
+    mature and fruiting. Germination does not accumulate.
+    """
+    crop_key = crop_type or DEFAULT_CROP_TYPE
+    if crop_key != "tomato":
+        return True
+    return tomato_gdd_accumulation_active(lifecycle_stage)
 
 
 def get_gdd_base_c(crop_type: str | None = None) -> float:
@@ -611,11 +761,540 @@ def never_advise_increase_nitrogen(
 
 
 # ---------------------------------------------------------------------------
+# Grape wine GDD phenology and cultivar reference profiles
+# Distinct from Oklahoma State University tomato constants above.
+#
+# devices.cultivar is a nullable sibling of crop_type. Null keeps the shared
+# GDD bands below (Chardonnay working points) so existing devices are unchanged.
+# Nutrient scoring stays on crop_type=grape_wine (Zhao et al. 2019).
+# ---------------------------------------------------------------------------
+
+GRAPE_WINE_GDD_STAGE_BANDS_PROVENANCE: str = (
+    "Northern Hemisphere reference data, provisional pending local calibration"
+)
+
+GRAPE_WINE_CULTIVAR_GDD_PROVENANCE: str = (
+    "provisional - Northern Hemisphere reference data (Chile, Washington, France), "
+    "pending local calibration"
+)
+
+# Southern Hemisphere season start hint (not auto-applied; devices.season_start_date
+# must be set explicitly). Never use 1 March or 1 April (Northern Hemisphere).
+GRAPE_WINE_SEASON_START_MONTH: int = 9
+GRAPE_WINE_SEASON_START_DAY: int = 1
+
+# °C·d working thresholds (base 10°C single-triangle). Fallback when cultivar is
+# null, and the explicit Chardonnay table. Budburst uses the lower bound of the
+# ~75-100 literature bracket, matching the historic shared table.
+#
+# Do not put Winkler regional classification totals (Region I <2500, Region II-III
+# 2500-3500 °F GDD, base 50°F) in these stage bands. Winkler is whole-season
+# climate classification, not budbreak-to-harvest accumulation. The two numbers
+# are easily confused and must not be conflated.
+GRAPE_WINE_GDD_STAGE_BANDS: dict[str, float] = {
+    "budburst": 75.0,
+    "flowering": 345.0,
+    "veraison": 1267.0,
+    "harvest": 1275.0,  # full season budburst to harvest
+}
+
+# Cabernet Sauvignon working points (base 10°C). Budburst uses the lower bound
+# of ~84-92 (same convention as Chardonnay 75 from ~75-100). Veraison 1200 is
+# the midpoint of an illustrative 1100-1300 bracket (lower confidence). Harvest
+# 1450 is the midpoint of 1352-1558 from two independent studies.
+#
+# Not the Winkler Region II-III total (2500-3500 °F GDD). See winkler_region.
+GRAPE_WINE_CABERNET_GDD_STAGE_BANDS: dict[str, float] = {
+    "budburst": 84.0,
+    "flowering": 375.0,
+    "veraison": 1200.0,
+    "harvest": 1450.0,
+}
+
+# Winkler Index Region I ceiling (°F GDD, base 50°F). Not compared to °C accumulator.
+WINKLER_REGION_I_CEILING_GDD_F: float = 2500.0
+WINKLER_INDEX_PROVENANCE: str = (
+    "Winkler Index Region I ceiling (°F GDD, base 50°F); not comparable to °C phenology bands"
+)
+# Cabernet Sauvignon climate-classification band. Same unit/base as Region I.
+# Still not comparable to the °C·d phenology stage bands above.
+WINKLER_REGION_II_III_MIN_GDD_F: float = 2500.0
+WINKLER_REGION_II_III_MAX_GDD_F: float = 3500.0
+WINKLER_INDEX_NOT_PHENOLOGY_NOTE: str = (
+    "Winkler Index is whole-season climate classification in °F GDD (base 50°F). "
+    "It is not comparable to the °C·d phenology stage bands (base 10°C) and must "
+    "not be used as budburst, flowering, veraison or harvest thresholds."
+)
+
+GRAPE_WINE_CULTIVAR_CHARDONNAY = "chardonnay"
+GRAPE_WINE_CULTIVAR_PINOT_NOIR = "pinot_noir"
+GRAPE_WINE_CULTIVAR_CABERNET_SAUVIGNON = "cabernet_sauvignon"
+
+GRAPE_WINE_CULTIVAR_IDS: tuple[str, ...] = (
+    GRAPE_WINE_CULTIVAR_CHARDONNAY,
+    GRAPE_WINE_CULTIVAR_PINOT_NOIR,
+    GRAPE_WINE_CULTIVAR_CABERNET_SAUVIGNON,
+)
+
+# Water-stress tables are reference/manual-comparison only. The HW-390 measures
+# soil moisture, not leaf or stem water potential, so these figures must never
+# feed evaluate_irrigation_due / project_drydown.
+GRAPE_WINE_WATER_STRESS_DRIVES_IRRIGATION: bool = False
+GRAPE_WINE_WATER_STRESS_HARDWARE_NOTE: str = (
+    "If you take a pressure chamber reading, compare it against this reference. "
+    "The HW-390 measures soil moisture, not water potential of any kind. "
+    "Live irrigation continues to run on soil-moisture depletion/dry-down. "
+    "This table is for future manual calibration/validation, not live automation."
+)
+
+GRAPE_WINE_CULTIVAR_PROFILES: dict[str, dict[str, Any]] = {
+    GRAPE_WINE_CULTIVAR_CHARDONNAY: {
+        "id": GRAPE_WINE_CULTIVAR_CHARDONNAY,
+        "display_name": "Chardonnay",
+        "gdd_stage_bands": dict(GRAPE_WINE_GDD_STAGE_BANDS),
+        "gdd_stage_band_notes": {
+            "budburst": "~75-100 °C·d; working threshold 75 (lower bound)",
+            "flowering": "~345 °C·d",
+            "veraison": "~1267 °C·d",
+            "harvest": "~1275 °C·d",
+        },
+        "gdd_provenance": (
+            "Chardonnay GDD stage bands. " + GRAPE_WINE_CULTIVAR_GDD_PROVENANCE
+        ),
+        "winkler_region": "I",
+        "winkler_region_label": "Region I (<2500 total seasonal GDD)",
+        "winkler_gdd_f_min": None,
+        "winkler_gdd_f_max": WINKLER_REGION_I_CEILING_GDD_F,
+        "winkler_note": WINKLER_INDEX_NOT_PHENOLOGY_NOTE,
+        "frost": {
+            "coverage": "single_point",
+            "stage_label": "budswell/budbreak",
+            "slight_damage_c": -2.8,
+            "slight_damage_f": 27.0,
+            "el_rows": None,
+            "note": (
+                "Provisional single-point reference: slight damage at budswell/"
+                "budbreak at 27°F (-2.8°C). Not a full E-L-staged table; none "
+                "was independently sourced for Chardonnay."
+            ),
+            "deacclimation_note": None,
+        },
+        "water_stress": {
+            "metric_type": "leaf_water_potential_gs50",
+            "psi_mpa": -1.22,
+            "psi_mpa_plus_minus": 0.06,
+            "units": "MPa",
+            "stages": None,
+            "open_gap": False,
+            "rdi_note": None,
+            "severity_warning": None,
+            "drives_irrigation": GRAPE_WINE_WATER_STRESS_DRIVES_IRRIGATION,
+            "note": GRAPE_WINE_WATER_STRESS_HARDWARE_NOTE,
+        },
+    },
+    GRAPE_WINE_CULTIVAR_PINOT_NOIR: {
+        "id": GRAPE_WINE_CULTIVAR_PINOT_NOIR,
+        "display_name": "Pinot Noir",
+        "gdd_stage_bands": dict(GRAPE_WINE_GDD_STAGE_BANDS),
+        "gdd_stage_band_notes": {
+            "budburst": (
+                "Pinot Noir GDD not independently sourced; using Chardonnay as "
+                "provisional proxy, same early-ripening Winkler Region I group"
+            ),
+            "flowering": (
+                "Pinot Noir GDD not independently sourced; using Chardonnay "
+                "as provisional proxy (~345 °C·d)"
+            ),
+            "veraison": (
+                "Pinot Noir GDD not independently sourced; using Chardonnay "
+                "as provisional proxy (~1267 °C·d)"
+            ),
+            "harvest": (
+                "Pinot Noir GDD not independently sourced; using Chardonnay "
+                "as provisional proxy (~1275 °C·d)"
+            ),
+        },
+        "gdd_provenance": (
+            "Pinot Noir GDD not independently sourced; using Chardonnay as "
+            "provisional proxy, same early-ripening Winkler Region I group. "
+            + GRAPE_WINE_CULTIVAR_GDD_PROVENANCE
+        ),
+        "winkler_region": "I",
+        "winkler_region_label": "Region I (<2500 total seasonal GDD)",
+        "winkler_gdd_f_min": None,
+        "winkler_gdd_f_max": WINKLER_REGION_I_CEILING_GDD_F,
+        "winkler_note": WINKLER_INDEX_NOT_PHENOLOGY_NOTE,
+        "frost": {
+            "coverage": "el_staged_table",
+            "stage_label": "E-L staged",
+            "slight_damage_c": None,
+            "slight_damage_f": None,
+            "el_rows": [
+                {
+                    "el_min": 2,
+                    "el_max": 3,
+                    "threshold_c": -3.3,
+                    "label": "early (E-L 2-3)",
+                },
+                {
+                    "el_min": 4,
+                    "el_max": 4,
+                    "threshold_c": -2.2,
+                    "label": "budburst (E-L 4)",
+                },
+                {
+                    "el_min": 9,
+                    "el_max": 9,
+                    "threshold_c": -1.7,
+                    "label": "E-L 9",
+                },
+                {
+                    "el_min": 11,
+                    "el_max": 11,
+                    "threshold_c": -1.1,
+                    "label": "E-L 11",
+                },
+            ],
+            "note": (
+                "E-L-staged frost thresholds: tissue hardens as the season "
+                "progresses even as the exposure window lengthens. "
+                "Approximately -3.3°C at E-L 2-3, -2.2°C at E-L 4 (budburst), "
+                "-1.7°C at E-L 9, -1.1°C at E-L 11."
+            ),
+            "deacclimation_note": None,
+        },
+        "water_stress": {
+            "metric_type": None,
+            "psi_mpa": None,
+            "psi_mpa_plus_minus": None,
+            "units": None,
+            "stages": None,
+            "open_gap": True,
+            "rdi_note": None,
+            "severity_warning": None,
+            "drives_irrigation": GRAPE_WINE_WATER_STRESS_DRIVES_IRRIGATION,
+            "note": (
+                "Pinot Noir water-stress reference not sourced; omitted rather "
+                "than guessed. Open gap."
+            ),
+        },
+    },
+    GRAPE_WINE_CULTIVAR_CABERNET_SAUVIGNON: {
+        "id": GRAPE_WINE_CULTIVAR_CABERNET_SAUVIGNON,
+        "display_name": "Cabernet Sauvignon",
+        "gdd_stage_bands": dict(GRAPE_WINE_CABERNET_GDD_STAGE_BANDS),
+        "gdd_stage_band_notes": {
+            "budburst": (
+                "~84-92 °C·d (later-budding than Chardonnay ~75-100); "
+                "working threshold 84 (lower bound)"
+            ),
+            "flowering": "~375 °C·d",
+            "veraison": (
+                "~1100-1300 °C·d illustrative bracket, lower confidence; "
+                "working midpoint 1200"
+            ),
+            "harvest": (
+                "~1352-1558 °C·d from two independent studies; "
+                "working midpoint 1450"
+            ),
+        },
+        "gdd_provenance": (
+            "Cabernet Sauvignon GDD stage bands. "
+            + GRAPE_WINE_CULTIVAR_GDD_PROVENANCE
+        ),
+        "winkler_region": "II-III",
+        "winkler_region_label": "Region II-III (2500-3500 total seasonal GDD)",
+        "winkler_gdd_f_min": WINKLER_REGION_II_III_MIN_GDD_F,
+        "winkler_gdd_f_max": WINKLER_REGION_II_III_MAX_GDD_F,
+        "winkler_note": WINKLER_INDEX_NOT_PHENOLOGY_NOTE,
+        "frost": {
+            "coverage": "single_point",
+            "stage_label": "budswell",
+            "slight_damage_c": -3.9,
+            "slight_damage_f": 25.0,
+            "el_rows": None,
+            "note": (
+                "Provisional single-point reference: no damage down to 25°F "
+                "(-3.9°C) at budswell. Notably more frost-tolerant at this "
+                "early stage than Chardonnay (slight damage at 27°F / -2.8°C). "
+                "Not a full E-L-staged table."
+            ),
+            "deacclimation_note": (
+                "Warm-climate variety with lower peak midwinter cold hardiness "
+                "but slower deacclimation: less prone to false-spring-triggered "
+                "early budbreak, but less hardiness in reserve if a hard freeze "
+                "lands during an already-active period. Future frost-risk logic "
+                "should weight forecast warm spells versus sudden late freezes "
+                "differently for this cultivar."
+            ),
+        },
+        "water_stress": {
+            "metric_type": "stem_water_potential",
+            "psi_mpa": None,
+            "psi_mpa_plus_minus": None,
+            "units": "MPa",
+            "stages": [
+                {
+                    "phenological_stage": "2 weeks pre-bloom",
+                    "psi_stem_mpa": -0.6,
+                },
+                {
+                    "phenological_stage": "Bunch closure",
+                    "psi_stem_mpa": -0.8,
+                },
+                {
+                    "phenological_stage": "Veraison initiation",
+                    "psi_stem_mpa": -1.0,
+                },
+                {
+                    "phenological_stage": "End of veraison",
+                    "psi_stem_mpa": -1.2,
+                },
+            ],
+            "open_gap": False,
+            "rdi_note": (
+                "RDI regime found effective in trials: 50% ETc fruit-set to "
+                "veraison, 80% ETc veraison to harvest. Descriptive note, "
+                "not an automation input."
+            ),
+            "severity_warning": (
+                "25% ETc strongly limited gas exchange and was economically "
+                "unsustainable in one trial. Descriptive note, not an "
+                "automation input."
+            ),
+            "drives_irrigation": GRAPE_WINE_WATER_STRESS_DRIVES_IRRIGATION,
+            "note": GRAPE_WINE_WATER_STRESS_HARDWARE_NOTE,
+        },
+    },
+}
+
+
+def normalise_grape_wine_cultivar(cultivar: str | None) -> str | None:
+    """Return a canonical grape_wine cultivar id, or None if unset/unknown."""
+    if cultivar is None:
+        return None
+    key = str(cultivar).strip().lower()
+    if key == "":
+        return None
+    if key in GRAPE_WINE_CULTIVAR_PROFILES:
+        return key
+    return None
+
+
+def is_valid_grape_wine_cultivar(cultivar: str | None) -> bool:
+    """True for null/empty (valid unset) or a known grape_wine cultivar id."""
+    if cultivar is None or str(cultivar).strip() == "":
+        return True
+    return normalise_grape_wine_cultivar(cultivar) is not None
+
+
+def get_grape_wine_cultivar_profile(
+    cultivar: str | None,
+) -> dict[str, Any] | None:
+    """Explicit cultivar profile, or None when cultivar is unset.
+
+    Null does not silently become Chardonnay in the UI. GDD inference still
+    falls back to GRAPE_WINE_GDD_STAGE_BANDS via get_grape_wine_gdd_stage_bands.
+    """
+    key = normalise_grape_wine_cultivar(cultivar)
+    if key is None:
+        return None
+    return GRAPE_WINE_CULTIVAR_PROFILES[key]
+
+
+def get_grape_wine_gdd_stage_bands(
+    cultivar: str | None = None,
+) -> dict[str, float]:
+    """Working °C·d thresholds. Null or unknown cultivar uses the shared table."""
+    profile = get_grape_wine_cultivar_profile(cultivar)
+    if profile is None:
+        return dict(GRAPE_WINE_GDD_STAGE_BANDS)
+    return dict(profile["gdd_stage_bands"])
+
+
+def get_grape_wine_gdd_provenance(cultivar: str | None = None) -> str:
+    profile = get_grape_wine_cultivar_profile(cultivar)
+    if profile is None:
+        return GRAPE_WINE_GDD_STAGE_BANDS_PROVENANCE
+    return str(profile["gdd_provenance"])
+
+
+def grape_wine_cultivar_options() -> list[dict[str, str]]:
+    return [
+        {
+            "cultivar": cultivar_id,
+            "display_name": str(
+                GRAPE_WINE_CULTIVAR_PROFILES[cultivar_id]["display_name"]
+            ),
+        }
+        for cultivar_id in GRAPE_WINE_CULTIVAR_IDS
+    ]
+
+
+# E-L to BBCH mapping for later disease gating.
+EL_TO_BBCH_PHASES: list[dict[str, Any]] = [
+    {
+        "phase": "shoot_development",
+        "el_min": 5,
+        "el_max": 18,
+        "bbch_min": 9,
+        "bbch_max": 17,
+    },
+    {
+        "phase": "flowering",
+        "el_min": 19,
+        "el_max": 26,
+        "bbch_min": 53,
+        "bbch_max": 65,
+    },
+    {
+        "phase": "berry_development",
+        "el_min": 27,
+        "el_max": 33,
+        "bbch_min": 71,
+        "bbch_max": 79,
+    },
+    {
+        "phase": "ripening",
+        "el_min": 34,
+        "el_max": 38,
+        "bbch_min": 81,
+        "bbch_max": 89,
+    },
+]
+
+GRAPE_WINE_PHENOLOGY_STAGE_LABELS: dict[str, str] = {
+    "pre_budburst": "Pre-budburst",
+    "budburst": "Budburst",
+    "flowering": "Flowering",
+    "veraison": "Veraison",
+    "harvest": "Harvest",
+}
+
+
+# ---------------------------------------------------------------------------
+# Grape wine root-zone soil temperature zones (graded scale, not a single
+# min/max band). Applied to both establishment and mature stages — no sourced
+# reason to differentiate was found. Mirror: shared/src/lib/growingConstants.ts
+# ---------------------------------------------------------------------------
+
+# Huang et al. 2005, cited in Holzapfel et al., Soil Temperature Prior to
+# Veraison Alters Grapevine Carbon Partitioning, Am. J. Enol. Vitic. 71(1):52:
+# root survival risk above 35°C. Marker within the heat_stress zone; not a
+# separate scoring boundary.
+GRAPE_ROOT_SURVIVAL_RISK_C = 35.0
+
+GRAPE_ROOT_ZONE_TEMP_PROVENANCE = (
+    "Graded root-zone temperature scale for grape_wine, applied identically to "
+    "establishment and mature (no sourced reason to differentiate). "
+    "Thresholds: Zhang et al. 2024 Horticulturae 10(3):245; Washington State "
+    "University Extension Vineyard Nutrient Management; Zelleke and Kliewer "
+    "1980; Thompson Seedless root-growth field study (~29.7°C); Huang et al. "
+    "2005 via Holzapfel et al. Am. J. Enol. Vitic. 71(1):52."
+)
+
+# Deliberate deviation from a round 24-30 / >30 split: the sourced upper
+# photosynthesis threshold is ~29.7°C, so the heat-stress boundary is 29.7
+# rather than an unsourced 30.
+GRAPE_ROOT_ZONE_TEMP_ZONES: list[dict[str, Any]] = [
+    {
+        "id": "dormant",
+        "label": "Dormant / no root activity",
+        "min_c": None,
+        # Zhang et al. 2024, Horticulturae 10(3):245: root activity floor 8-10°C at 5cm
+        "max_c": 8.0,
+        "severity": "warn",
+        "note": (
+            "Below root activity floor; nutrient and water uptake has not begun."
+        ),
+    },
+    {
+        "id": "impaired",
+        "label": "Root activity beginning, nutrient uptake impaired",
+        # Zhang et al. 2024, Horticulturae 10(3):245: root activity begins 8-10°C at 5cm
+        "min_c": 8.0,
+        # Washington State University Extension, Vineyard Nutrient Management in
+        # Washington State: practical nutrient-uptake floor ~13°C (55°F).
+        # Zelleke and Kliewer 1980 (cited in Root Zone Temperature overview,
+        # ScienceDirect Topics): at 12°C, xylem sap cytokinin is ~50% of the
+        # level at 25°C.
+        "max_c": 13.0,
+        "severity": "warn",
+        "note": (
+            "Roots active but nutrient uptake still impaired relative to "
+            "warmer soil."
+        ),
+    },
+    {
+        "id": "functional",
+        "label": "Functional, below optimal",
+        # Washington State University Extension practical uptake floor ~13°C
+        "min_c": 13.0,
+        # Zhang et al. 2024, Horticulturae 10(3):245: optimal band starts 21°C
+        "max_c": 21.0,
+        "severity": "watch",
+        "note": (
+            "Functional root-zone temperature; below the flowering/fruiting "
+            "optimum."
+        ),
+    },
+    {
+        "id": "optimal",
+        "label": "Optimal",
+        # Zhang et al. 2024, Horticulturae 10(3):245: optimal 21-24°C (flowering/fruiting)
+        "min_c": 21.0,
+        "max_c": 24.0,
+        "severity": "ok",
+        "note": "Optimal root-zone band for flowering and fruiting.",
+    },
+    {
+        "id": "above_optimal",
+        "label": "Above optimal, approaching photosynthesis ceiling",
+        # Zhang et al. 2024 optimal upper bound 24°C
+        "min_c": 24.0,
+        # Field study reported in Relationship between Root Growth of 'Thompson
+        # Seedless' Grapevines and Soil Temperature: ~29.7°C root zone sits near
+        # the upper threshold of optimum grapevine photosynthesis. Used as 29.7
+        # rather than rounding to an unsourced 30.
+        "max_c": 29.7,
+        "severity": "watch",
+        "note": (
+            "Above optimal; approaching the upper photosynthesis threshold."
+        ),
+    },
+    {
+        "id": "heat_stress",
+        "label": "Heat stress / root survival risk",
+        # ~29.7°C upper photosynthesis threshold (Thompson Seedless field study)
+        "min_c": 29.7,
+        "max_c": None,
+        "severity": "warn",
+        "note": (
+            "Heat stress. Root survival risk rises above 35°C "
+            "(Huang et al. 2005)."
+        ),
+    },
+]
+
+
+def grape_root_zone_temp_zone(temp_c: float) -> dict[str, Any]:
+    """Look up the graded zone containing a root-zone temperature (°C)."""
+    for zone in GRAPE_ROOT_ZONE_TEMP_ZONES:
+        min_c = zone["min_c"]
+        max_c = zone["max_c"]
+        above_min = min_c is None or temp_c >= min_c
+        below_max = max_c is None or temp_c < max_c
+        if above_min and below_max:
+            return zone
+    return GRAPE_ROOT_ZONE_TEMP_ZONES[-1]
+
+
+# ---------------------------------------------------------------------------
 # Backward-compatible tomato / mature module aliases
 # (values unchanged; lookups should prefer get_crop_stage going forward)
 # ---------------------------------------------------------------------------
 
-_TOMATO_MATURE = CROP_PROFILES["tomato"]["stages"]["mature"]
+_TOMATO_MATURE = CROP_PROFILES["tomato"]["stages"]["vegetative_growth"]
 
 PH_MIN = _TOMATO_MATURE["ph_min"]
 PH_MAX = _TOMATO_MATURE["ph_max"]
