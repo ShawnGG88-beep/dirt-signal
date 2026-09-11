@@ -930,11 +930,11 @@ export function Dashboard({
               soilTexture={soilTexture}
               cultivar={cultivar}
               onProfileSaved={(
-                nextCrop,
-                nextStage,
-                nextSeason,
-                nextTexture,
-                nextCultivar,
+                nextCrop: string,
+                nextStage: string,
+                nextSeason?: string | null,
+                nextTexture?: string | null,
+                nextCultivar?: string | null,
               ) => {
                 setCropType(nextCrop);
                 setLifecycleStage(nextStage);
