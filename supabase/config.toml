@@ -1,0 +1,15 @@
+# Supabase local config (Edge Functions).
+# Secrets (Dashboard > Edge Functions > weather-forecast-sync > Secrets):
+#   WEATHER_MODE=mock|real
+#   WEATHER_LATITUDE=   (required when WEATHER_MODE=real)
+#   WEATHER_LONGITUDE=  (required when WEATHER_MODE=real)
+#   WEATHER_TIMEZONE=Africa/Johannesburg  (optional)
+# SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are injected automatically at runtime.
+
+project_id = "jrrrwukcasaqyqaidrme"
+
+[functions.weather-forecast-sync]
+verify_jwt = true
+
+[functions.advisories-daily-sync]
+verify_jwt = true

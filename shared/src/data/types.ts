@@ -19,13 +19,28 @@ export interface SensorReading {
   npk_n_est: number | null;
   npk_p_est: number | null;
   npk_k_est: number | null;
+  /** Moisture % from the 7-in-1 NPK probe. Null on pre-NPK rows. */
+  npk_moisture_pct?: number | null;
+  /** Temperature °C from the 7-in-1 NPK probe. Null on pre-NPK rows. */
+  npk_temp_c?: number | null;
+  /** pH from the 7-in-1 NPK probe. Null on pre-NPK rows. */
+  npk_ph?: number | null;
   probe_depth_cm?: number | null;
   /** Profile stamped at insert. Null on pre-provenance rows. */
   crop_type_at_reading?: string | null;
   lifecycle_stage_at_reading?: string | null;
 }
 
-export interface LatestReadingResponse {
+/** Collector config.yaml mock|real flags, mirrored onto devices. */
+export interface DeviceSensorModeFields {
+  moisture_mode?: string | null;
+  ph_mode?: string | null;
+  ds18b20_mode?: string | null;
+  dht22_mode?: string | null;
+  npk_mode?: string | null;
+}
+
+export interface LatestReadingResponse extends DeviceSensorModeFields {
   device_name: string;
   reading: SensorReading | null;
   crop_type?: string;
@@ -33,9 +48,15 @@ export interface LatestReadingResponse {
   device_id?: string | null;
   timezone?: string;
   season_start_date?: string | null;
+  soil_texture?: string | null;
+  cultivar?: string | null;
+  /** HW-390 relative saturation % at field capacity. Null until calibrated. */
+  soil_field_capacity_raw?: number | null;
+  /** HW-390 relative saturation % at irrigation refill point. Null until set. */
+  soil_refill_point_raw?: number | null;
 }
 
-export interface ReadingsRangeResponse {
+export interface ReadingsRangeResponse extends DeviceSensorModeFields {
   device_name: string;
   from_at: string;
   to_at: string;
@@ -46,15 +67,23 @@ export interface ReadingsRangeResponse {
   device_id?: string | null;
   timezone?: string;
   season_start_date?: string | null;
+  soil_texture?: string | null;
+  cultivar?: string | null;
+  soil_field_capacity_raw?: number | null;
+  soil_refill_point_raw?: number | null;
 }
 
-export interface DeviceResponse {
+export interface DeviceResponse extends DeviceSensorModeFields {
   id: string;
   name: string;
   crop_type: string;
   lifecycle_stage: string;
   timezone?: string;
   season_start_date?: string | null;
+  soil_texture?: string | null;
+  cultivar?: string | null;
+  soil_field_capacity_raw?: number | null;
+  soil_refill_point_raw?: number | null;
 }
 
 export interface ProfileStageOption {
@@ -62,10 +91,16 @@ export interface ProfileStageOption {
   display_name: string;
 }
 
+export interface ProfileCultivarOption {
+  cultivar: string;
+  display_name: string;
+}
+
 export interface ProfileCropOption {
   crop_type: string;
   display_name: string;
   lifecycle_stages: ProfileStageOption[];
+  cultivars?: ProfileCultivarOption[];
 }
 
 export interface DeviceProfileOptionsResponse {
@@ -143,7 +178,12 @@ export type AlertRuleType =
   | "approaching_bound"
   | "collector_silence"
   | "irrigation_due"
-  | "disease_pressure";
+  | "disease_pressure"
+  | "forecast_chill_risk"
+  | "tomato_early_blight"
+  | "tomato_late_blight"
+  | "tomato_powdery_mildew"
+  | "tomato_moisture_cracking";
 
 export interface AlertEvent {
   id: string;
@@ -228,6 +268,7 @@ export interface DailyAggregatesResponse {
   season_start_date: string | null;
   crop_type: string;
   lifecycle_stage: string;
+  cultivar?: string | null;
   gdd_base_c: number;
   from_at: string;
   to_at: string;
@@ -246,4 +287,80 @@ export interface AlertEvaluateResponse {
   evaluated: number;
   opened: number;
   closed: number;
+}
+
+export interface DailyAdvisoryDigestResponse {
+  device_name: string;
+  computed_at: string | null;
+  digest: DailyAdvisoryDigestPayload | null;
+}
+
+export interface DeviceAdvisoriesDailyRow {
+  device_id: string;
+  computed_at: string;
+  digest: DailyAdvisoryDigestPayload;
+}
+
+export interface DailyAdvisoryDigestPayload {
+  device_id: string;
+  crop_type: string;
+  lifecycle_stage: string;
+  evaluated_at: string;
+  spray_window: {
+    found: boolean;
+    window_start: string | null;
+    window_end: string | null;
+    message: string;
+  };
+  capture_suggestion: {
+    suggested_at: string | null;
+    cloud_cover: number | null;
+    stability_label: string;
+    note: string;
+  };
+  tomato: Record<string, unknown> | null;
+}
+
+/** @deprecated Use DailyAdvisoryDigestPayload */
+export interface DailyAdvisoryDigestResponseLegacy {
+  device_name: string;
+  digest: DailyAdvisoryDigestPayload;
+}
+
+/** One hourly row from weather_forecast (Open-Meteo / mock). */
+export interface WeatherForecastHour {
+  forecast_time: string;
+  fetched_at: string;
+  temperature_2m: number | null;
+  relative_humidity_2m: number | null;
+  precipitation: number | null;
+  precipitation_probability: number | null;
+  wind_speed_10m: number | null;
+  wind_gusts_10m: number | null;
+  cloud_cover: number | null;
+  weather_code: number | null;
+  cape: number | null;
+  et0_fao_evapotranspiration: number | null;
+  soil_temperature_0cm: number | null;
+  soil_moisture_0_1cm: number | null;
+  source: "open-meteo" | "mock" | string;
+}
+
+/** One daily row from weather_forecast_daily (sunrise/sunset UTC). */
+export interface WeatherForecastDay {
+  forecast_date: string;
+  fetched_at: string;
+  sunrise_at: string | null;
+  sunset_at: string | null;
+  source: "open-meteo" | "mock" | string;
+}
+
+export interface WeatherForecastResponse {
+  device_name: string;
+  device_id: string | null;
+  timezone: string;
+  /** Max fetched_at across returned rows; null if empty. */
+  fetched_at: string | null;
+  hours: WeatherForecastHour[];
+  days: WeatherForecastDay[];
 }

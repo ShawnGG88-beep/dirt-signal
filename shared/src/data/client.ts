@@ -15,6 +15,8 @@ import type {
   AlertRule,
   AlertRulesListResponse,
   DailyAggregatesResponse,
+  DailyAdvisoryDigestResponse,
+  DailyAdvisoryDigestResponseLegacy,
   DeviceProfileOptionsResponse,
   DeviceResponse,
   HealthResponse,
@@ -24,6 +26,7 @@ import type {
   PlantEventUpdate,
   PlantEventsListResponse,
   ReadingsRangeResponse,
+  WeatherForecastResponse,
 } from "./types";
 
 export interface EventsQuery {
@@ -47,6 +50,10 @@ export interface DeviceProfilePatch {
   lifecycle_stage?: string;
   season_start_date?: string | null;
   clear_season_start?: boolean;
+  soil_texture?: string | null;
+  cultivar?: string | null;
+  soil_field_capacity_raw?: number | null;
+  soil_refill_point_raw?: number | null;
 }
 
 export interface AlertRulePatch {
@@ -96,6 +103,25 @@ export interface DataClient {
    * engine runs in the sidecar).
    */
   evaluateAlerts?(): Promise<AlertEvaluateResponse>;
+  /**
+   * Optional: live-compute fallback via sidecar (dev only).
+   * @deprecated Prefer fetchLatestAdvisoryDigest.
+   */
+  fetchDailyAdvisories?(
+    deviceName?: string,
+  ): Promise<DailyAdvisoryDigestResponseLegacy>;
+  /** Precomputed digest from device_advisories_daily (primary path). */
+  fetchLatestAdvisoryDigest(
+    deviceName?: string,
+  ): Promise<DailyAdvisoryDigestResponse>;
+  /**
+   * Hourly + daily Open-Meteo forecast for the weather horizon.
+   * @param horizonHours how many hours ahead to include (default 168).
+   */
+  fetchWeatherForecast(
+    deviceName?: string,
+    horizonHours?: number,
+  ): Promise<WeatherForecastResponse>;
 }
 
 let activeClient: DataClient | null = null;
@@ -227,4 +253,29 @@ export function evaluateAlerts(): Promise<AlertEvaluateResponse> {
     );
   }
   return client.evaluateAlerts();
+}
+
+export function fetchLatestAdvisoryDigest(
+  deviceName?: string,
+): Promise<DailyAdvisoryDigestResponse> {
+  return getDataClient().fetchLatestAdvisoryDigest(deviceName);
+}
+
+export function fetchDailyAdvisories(
+  deviceName?: string,
+): Promise<DailyAdvisoryDigestResponseLegacy> {
+  const client = getDataClient();
+  if (!client.fetchDailyAdvisories) {
+    return Promise.reject(
+      new Error("Live daily advisories are only available via the sidecar."),
+    );
+  }
+  return client.fetchDailyAdvisories(deviceName);
+}
+
+export function fetchWeatherForecast(
+  deviceName?: string,
+  horizonHours?: number,
+): Promise<WeatherForecastResponse> {
+  return getDataClient().fetchWeatherForecast(deviceName, horizonHours);
 }

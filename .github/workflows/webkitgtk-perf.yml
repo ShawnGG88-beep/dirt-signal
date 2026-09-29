@@ -1,0 +1,68 @@
+name: WebKitGTK perf probe
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "scripts/linux-webkit-perf/**"
+      - ".github/workflows/webkitgtk-perf.yml"
+
+jobs:
+  webkitgtk-perf:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install WebKitGTK + Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xvfb \
+            python3-gi \
+            gir1.2-gtk-3.0 \
+            gir1.2-webkit2-4.1 \
+            libwebkit2gtk-4.1-0 \
+            libgtk-3-0
+
+      - name: Serve fixture + run WebKitGTK probe
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          python3 -m http.server 8765 --directory scripts/linux-webkit-perf &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS "http://127.0.0.1:8765/fixture.html" >/dev/null; then
+              break
+            fi
+            sleep 0.5
+          done
+          xvfb-run -a -s "-screen 0 1280x800x24" \
+            python3 scripts/linux-webkit-perf/run_probe.py \
+              --url "http://127.0.0.1:8765/fixture.html" \
+              --out artifacts/webkitgtk-perf.json \
+              --timeout-sec 120
+
+      - name: Show results
+        if: always()
+        run: |
+          if [ -f artifacts/webkitgtk-perf.json ]; then
+            python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path("artifacts/webkitgtk-perf.json").read_text())
+          print(json.dumps(data, indent=2))
+          PY
+          else
+            echo "No results file"
+            exit 1
+          fi
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: webkitgtk-perf
+          path: artifacts/webkitgtk-perf.json

@@ -27,7 +27,7 @@ def get_supabase() -> Client:
     return _client
 
 
-def _device_from_row(row: dict) -> dict[str, str | int | None]:
+def _device_from_row(row: dict) -> dict[str, str | int | float | None]:
     """Normalise a devices row; default crop/stage/timezone when absent."""
     from day_night import default_device_timezone
 
@@ -41,17 +41,44 @@ def _device_from_row(row: dict) -> dict[str, str | int | None]:
         interval = None
     if interval is not None and interval < 1:
         interval = None
+
+    def _optional_pct(key: str) -> float | None:
+        raw = row.get(key)
+        if raw is None:
+            return None
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return None
+        return value
+
     return {
         "id": str(row["id"]),
         "name": str(row.get("name") or ""),
         "crop_type": str(row.get("crop_type") or "tomato"),
         "lifecycle_stage": str(row.get("lifecycle_stage") or "mature"),
         "timezone": tz_str or default_device_timezone(),
-        "season_start_date": str(season) if season else None,
-        # None when the column is absent (pre-009) or invalid; callers fall
-        # back to COLLECTOR_INTERVAL_SECONDS, then 30.
+        "season_start_date": str(season)[:10] if season else None,
         "collector_interval_seconds": interval,
+        "soil_texture": row.get("soil_texture"),
+        "cultivar": row.get("cultivar"),
+        "soil_field_capacity_raw": _optional_pct("soil_field_capacity_raw"),
+        "soil_refill_point_raw": _optional_pct("soil_refill_point_raw"),
+        "moisture_mode": _optional_mode(row.get("moisture_mode")),
+        "ph_mode": _optional_mode(row.get("ph_mode")),
+        "ds18b20_mode": _optional_mode(row.get("ds18b20_mode")),
+        "dht22_mode": _optional_mode(row.get("dht22_mode")),
+        "npk_mode": _optional_mode(row.get("npk_mode")),
     }
+
+
+def _optional_mode(raw: object) -> str | None:
+    if raw is None:
+        return None
+    value = str(raw).strip().lower()
+    if value in ("mock", "real"):
+        return value
+    return None
 
 
 def resolve_device(device_name: str) -> dict[str, str | int | None]:

@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import {
   Alerts,
   AlertPollProvider,
   Dashboard,
+  DesignSystem,
   History,
+  ReduceMotionToggle,
+  ReduceTransparencyToggle,
   Reports,
   ThemeToggle,
   type MetricKey,
@@ -33,6 +36,7 @@ const NAV: { id: WebNavView; label: string }[] = [
   { id: "alerts", label: "Alerts" },
   { id: "soil-tests", label: "Soil tests" },
   { id: "observations", label: "Observations" },
+  { id: "design", label: "Design" },
 ];
 
 function readRoute(): WebRoute {
@@ -44,10 +48,54 @@ function readRoute(): WebRoute {
   return parsed;
 }
 
+function navigateTo(go: (next: WebRoute) => void, item: WebNavView, route: WebRoute) {
+  if (item === "dashboard") go({ view: "dashboard" });
+  else if (item === "history") {
+    go({
+      view: "history",
+      range: route.view === "history" ? route.range : "24h",
+    });
+  } else if (item === "reports") {
+    go({
+      view: "reports",
+      range: route.view === "reports" ? route.range : "30d",
+    });
+  } else if (item === "alerts") {
+    go({ view: "alerts" });
+  } else if (item === "design") {
+    go({ view: "design" });
+  } else {
+    go({ view: item } as WebRoute);
+  }
+}
+
+function useMobileNav(): boolean {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined"
+      ? window.matchMedia("(max-width: 560px)").matches
+      : false,
+  );
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 560px)");
+    function update() {
+      setIsMobile(mq.matches);
+    }
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
+  return isMobile;
+}
+
 function AppShell() {
   const [route, setRoute] = useState<WebRoute>(() => readRoute());
   const [profileEpoch, setProfileEpoch] = useState(0);
   const [eventsEpoch, setEventsEpoch] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const drawerId = useId();
+  const isMobile = useMobileNav();
 
   useEffect(() => {
     function onHashChange() {
@@ -56,6 +104,29 @@ function AppShell() {
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
+
+  // Close the drawer whenever the route changes (nav link or hash edit).
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [route]);
+
+  useEffect(() => {
+    if (!isMobile) setMenuOpen(false);
+  }, [isMobile]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setMenuOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [menuOpen]);
 
   const go = useCallback((next: WebRoute) => {
     const hash = formatWebHash(next);
@@ -67,50 +138,103 @@ function AppShell() {
   }, []);
 
   const activeNav = webNavViewFromRoute(route);
+  const viewTitle =
+    NAV.find((item) => item.id === activeNav)?.label ?? "Dashboard";
 
   const detailMetric: MetricKey | null =
     route.view === "metric" ? route.key : null;
   const detailRange: RangePreset =
     route.view === "metric" ? route.range : "6h";
 
+  function renderNavButtons(className: string) {
+    return NAV.map((item) => (
+      <button
+        key={item.id}
+        type="button"
+        className={
+          activeNav === item.id
+            ? `${className} ${className}-active`
+            : className
+        }
+        onClick={() => navigateTo(go, item.id, route)}
+      >
+        {item.label}
+      </button>
+    ));
+  }
+
   return (
     <AlertPollProvider>
+      <div className="sky-backdrop" aria-hidden="true" />
       <main className="app">
         <OfflineBanner />
-        <nav className="app-nav" aria-label="Main">
-          {NAV.map((item) => (
+
+        {/* Compact mobile chrome: menu + current view + theme. */}
+        <header className="app-mobile-bar">
+          <button
+            type="button"
+            className="app-menu-toggle"
+            aria-expanded={menuOpen}
+            aria-controls={drawerId}
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            <span className="app-menu-toggle-glyph" aria-hidden="true">
+              {menuOpen ? "✕" : "☰"}
+            </span>
+            <span className="visually-hidden">
+              {menuOpen ? "Close menu" : "Open menu"}
+            </span>
+          </button>
+          <p className="app-mobile-title">{viewTitle}</p>
+          <ThemeToggle />
+        </header>
+
+        {menuOpen && (
+          <button
+            type="button"
+            className="app-nav-backdrop"
+            aria-label="Close menu"
+            onClick={() => setMenuOpen(false)}
+          />
+        )}
+        <nav
+          id={drawerId}
+          className={
+            menuOpen
+              ? "app-nav-drawer app-nav-drawer-open"
+              : "app-nav-drawer"
+          }
+          aria-label={isMobile ? "Main" : undefined}
+          aria-hidden={isMobile ? !menuOpen : true}
+          inert={!isMobile || !menuOpen ? true : undefined}
+        >
+          {renderNavButtons("app-nav-drawer-link")}
+          <div className="app-nav-drawer-tools">
+            <DevicePicker />
+            <ReduceTransparencyToggle />
+            <ReduceMotionToggle />
             <button
-              key={item.id}
               type="button"
-              className={
-                activeNav === item.id
-                  ? "app-nav-btn app-nav-btn-active"
-                  : "app-nav-btn"
-              }
-              onClick={() => {
-                if (item.id === "dashboard") go({ view: "dashboard" });
-                else if (item.id === "history") {
-                  go({
-                    view: "history",
-                    range: route.view === "history" ? route.range : "24h",
-                  });
-                } else if (item.id === "reports") {
-                  go({
-                    view: "reports",
-                    range: route.view === "reports" ? route.range : "30d",
-                  });
-                } else if (item.id === "alerts") {
-                  go({ view: "alerts" });
-                } else {
-                  go({ view: item.id } as WebRoute);
-                }
-              }}
+              className="app-nav-drawer-link app-nav-drawer-signout"
+              onClick={() => void supabase.auth.signOut()}
             >
-              {item.label}
+              Sign out
             </button>
-          ))}
+          </div>
+        </nav>
+
+        {/* Wide-viewport horizontal nav (hidden below 560px). */}
+        <nav
+          className="app-nav app-nav-desktop"
+          aria-label={isMobile ? undefined : "Main"}
+          aria-hidden={isMobile || undefined}
+          inert={isMobile ? true : undefined}
+        >
+          {renderNavButtons("app-nav-btn")}
           <span className="app-nav-spacer" />
           <DevicePicker />
+          <ReduceTransparencyToggle />
+          <ReduceMotionToggle />
           <ThemeToggle />
           <button
             type="button"
@@ -165,6 +289,7 @@ function AppShell() {
           />
         )}
         {route.view === "alerts" && <Alerts />}
+        {route.view === "design" && <DesignSystem />}
         {route.view === "soil-tests" && <SoilTests />}
         {route.view === "observations" && <Observations />}
       </main>

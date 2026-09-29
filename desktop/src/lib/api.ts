@@ -12,6 +12,8 @@ import type {
   AlertRule,
   AlertRulesListResponse,
   DailyAggregatesResponse,
+  DailyAdvisoryDigestResponse,
+  DailyAdvisoryDigestResponseLegacy,
   DeviceProfileOptionsResponse,
   DeviceResponse,
   HealthResponse,
@@ -21,6 +23,7 @@ import type {
   PlantEventUpdate,
   PlantEventsListResponse,
   ReadingsRangeResponse,
+  WeatherForecastResponse,
 } from "@dirt-signal/shared";
 
 // Re-export so desktop-internal imports of "../lib/api" keep working.
@@ -128,6 +131,10 @@ export async function patchDeviceProfile(
     lifecycle_stage?: string;
     season_start_date?: string | null;
     clear_season_start?: boolean;
+    soil_texture?: string | null;
+    cultivar?: string | null;
+    soil_field_capacity_raw?: number | null;
+    soil_refill_point_raw?: number | null;
   },
 ): Promise<DeviceResponse> {
   return apiFetch<DeviceResponse>(
@@ -298,6 +305,36 @@ export async function evaluateAlerts(): Promise<AlertEvaluateResponse> {
   });
 }
 
+export async function fetchLatestAdvisoryDigest(
+  deviceName = "pi-garden-01",
+): Promise<DailyAdvisoryDigestResponse> {
+  return apiFetch<DailyAdvisoryDigestResponse>(
+    `/advisories/latest?device_name=${encodeURIComponent(deviceName)}`,
+  );
+}
+
+export async function fetchDailyAdvisories(
+  deviceName = "pi-garden-01",
+): Promise<DailyAdvisoryDigestResponseLegacy> {
+  const result = await apiFetch<{
+    device_name: string;
+    digest: DailyAdvisoryDigestResponseLegacy["digest"];
+  }>(`/advisories/daily?device_name=${encodeURIComponent(deviceName)}`);
+  return {
+    device_name: result.device_name,
+    digest: result.digest,
+  };
+}
+
+export async function fetchWeatherForecast(
+  deviceName = "pi-garden-01",
+  horizonHours = 168,
+): Promise<WeatherForecastResponse> {
+  return apiFetch<WeatherForecastResponse>(
+    `/weather/forecast?device_name=${encodeURIComponent(deviceName)}&horizon_hours=${horizonHours}`,
+  );
+}
+
 /** Sidecar implementation of the shared data-client seam. */
 export const sidecarDataClient: DataClient = {
   sourceLabel: "sidecar (127.0.0.1:8731)",
@@ -317,4 +354,7 @@ export const sidecarDataClient: DataClient = {
   fetchAlertRules,
   patchAlertRule,
   evaluateAlerts,
+  fetchLatestAdvisoryDigest,
+  fetchDailyAdvisories,
+  fetchWeatherForecast,
 };

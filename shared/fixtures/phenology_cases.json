@@ -1,0 +1,62 @@
+{
+  "season_start_hint": [
+    {
+      "id": "before_sept_same_year",
+      "as_of": "2026-08-15T12:00:00Z",
+      "timezone": "Africa/Johannesburg",
+      "expect": "2025-09-01"
+    },
+    {
+      "id": "on_sept_first",
+      "as_of": "2026-09-01T06:00:00Z",
+      "timezone": "Africa/Johannesburg",
+      "expect": "2026-09-01"
+    },
+    {
+      "id": "after_sept_same_year",
+      "as_of": "2026-11-20T12:00:00Z",
+      "timezone": "Africa/Johannesburg",
+      "expect": "2026-09-01"
+    }
+  ],
+  "infer_stage": [
+    { "id": "pre_budburst", "cumulative_gdd": 40, "expect_stage": "pre_budburst" },
+    { "id": "budburst", "cumulative_gdd": 100, "expect_stage": "budburst" },
+    { "id": "flowering", "cumulative_gdd": 400, "expect_stage": "flowering" },
+    { "id": "veraison", "cumulative_gdd": 1270, "expect_stage": "veraison" },
+    { "id": "harvest", "cumulative_gdd": 1300, "expect_stage": "harvest" }
+  ],
+  "el_to_bbch": [
+    { "id": "shoot", "el": 10, "expect_phase": "shoot_development" },
+    { "id": "flowering", "el": 22, "expect_phase": "flowering" },
+    { "id": "berry", "el": 30, "expect_phase": "berry_development" },
+    { "id": "ripening", "el": 36, "expect_phase": "ripening" },
+    { "id": "outside", "el": 3, "expect_phase": null }
+  ],
+  "forecast_daily": {
+    "timezone": "Africa/Johannesburg",
+    "hourly": [
+      { "forecast_time": "2026-08-23T06:00:00Z", "temperature_2m": 8 },
+      { "forecast_time": "2026-08-23T14:00:00Z", "temperature_2m": 22 },
+      { "forecast_time": "2026-08-24T06:00:00Z", "temperature_2m": 10 },
+      { "forecast_time": "2026-08-24T14:00:00Z", "temperature_2m": 24 }
+    ],
+    "expect_days": [
+      { "day": "2026-08-23", "t_max_c": 22, "t_min_c": 8 },
+      { "day": "2026-08-24", "t_max_c": 24, "t_min_c": 10 }
+    ]
+  },
+  "projection": {
+    "accumulated_gdd": 70,
+    "as_of_day": "2026-08-22",
+    "forecast_days": [
+      { "day": "2026-08-23", "t_max_c": 30, "t_min_c": 10 },
+      { "day": "2026-08-24", "t_max_c": 32, "t_min_c": 12 },
+      { "day": "2026-08-25", "t_max_c": 28, "t_min_c": 14 },
+      { "day": "2026-08-26", "t_max_c": 26, "t_min_c": 12 }
+    ],
+    "expect_first_confidence": "high",
+    "expect_transition_threshold": "budburst",
+    "expect_transition_day": "2026-08-23"
+  }
+}

@@ -21,10 +21,11 @@ from dotenv import load_dotenv
 from supabase import Client, create_client
 
 from camera.base import Camera
-from camera.factory import CameraMode, build_camera
-from camera.picamera_capture import (
+from camera.factory import (
     DEFAULT_CAPTURE_HEIGHT,
     DEFAULT_CAPTURE_WIDTH,
+    CameraMode,
+    build_camera,
 )
 from sensors.factory import SensorMode, build_sensors
 
@@ -117,16 +118,53 @@ def resolve_device_id(client: Client, device_name: str) -> str:
     return resolve_device(client, device_name)["id"]
 
 
+def sync_sensor_modes(
+    client: Client,
+    device_id: str,
+    *,
+    moisture_mode: str,
+    ph_mode: str,
+    ds18b20_mode: str,
+    dht22_mode: str,
+    npk_mode: str,
+) -> None:
+    """Mirror config.yaml *_mode flags onto devices for dashboard Simulated badges."""
+
+    def _norm(value: str) -> str:
+        v = str(value).strip().lower()
+        if v not in ("mock", "real"):
+            raise ValueError(f"sensor mode must be mock|real, got {value!r}")
+        return v
+
+    patch = {
+        "moisture_mode": _norm(moisture_mode),
+        "ph_mode": _norm(ph_mode),
+        "ds18b20_mode": _norm(ds18b20_mode),
+        "dht22_mode": _norm(dht22_mode),
+        "npk_mode": _norm(npk_mode),
+    }
+    client.table("devices").update(patch).eq("id", device_id).execute()
+    logger.info(
+        "Synced sensor modes for device %s: %s",
+        device_id,
+        patch,
+    )
+
+
 def collect_reading(
     moisture: Any,
     ph: Any,
     ambient: Any,
     soil_temp: Any,
+    npk: Any,
 ) -> dict[str, Any]:
     m = moisture.read()
     p = ph.read()
     a = ambient.read()
     s = soil_temp.read()
+    n = npk.read()
+    # Dedicated probes own moisture_pct / soil_temp_c / ph. The 7-in-1's
+    # copies of those three go to npk_* columns (migration 010).
     return {
         "moisture_raw": m.raw,
         "moisture_pct": m.pct,
@@ -134,10 +172,13 @@ def collect_reading(
         "ambient_temp_c": a.temp_c,
         "ambient_humidity_pct": a.humidity_pct,
         "soil_temp_c": s.temp_c,
-        "ec_us_cm": None,
-        "npk_n_est": None,
-        "npk_p_est": None,
-        "npk_k_est": None,
+        "ec_us_cm": n.ec_us_cm,
+        "npk_n_est": n.n_est,
+        "npk_p_est": n.p_est,
+        "npk_k_est": n.k_est,
+        "npk_moisture_pct": n.moisture_pct,
+        "npk_temp_c": n.temp_c,
+        "npk_ph": n.ph,
     }
 
 
@@ -158,10 +199,19 @@ def write_reading(
     client.table("sensor_readings").insert(row).execute()
     logger.info(
         "Inserted reading: moisture=%.1f%% pH=%.2f soil=%.1f°C "
+        "N=%s P=%s K=%s EC=%s "
+        "npk_moisture=%.1f%% npk_temp=%.1f°C npk_ph=%.2f "
         "profile=%s/%s",
         payload["moisture_pct"],
         payload["ph"],
         payload["soil_temp_c"],
+        payload["npk_n_est"],
+        payload["npk_p_est"],
+        payload["npk_k_est"],
+        payload["ec_us_cm"],
+        payload["npk_moisture_pct"],
+        payload["npk_temp_c"],
+        payload["npk_ph"],
         device["crop_type"],
         device["lifecycle_stage"],
     )
@@ -181,6 +231,7 @@ def run_sensor_loop(
     ph: Any,
     ambient: Any,
     soil_temp: Any,
+    npk: Any,
     interval: int,
 ) -> None:
     while not _shutdown:
@@ -188,7 +239,7 @@ def run_sensor_loop(
             # Re-resolve each cycle so a mid-run profile switch is stamped
             # on subsequent inserts without restarting the collector.
             device = resolve_device(client, device_name)
-            payload = collect_reading(moisture, ph, ambient, soil_temp)
+            payload = collect_reading(moisture, ph, ambient, soil_temp, npk)
             write_reading(client, device, payload)
         except Exception:
             logger.exception("Failed to collect or write reading")
@@ -278,6 +329,12 @@ def run() -> None:
     dht22_mode: SensorMode = config.get("dht22_mode", "mock")
     moisture_mode: SensorMode = config.get("moisture_mode", "mock")
     ph_mode: SensorMode = config.get("ph_mode", "mock")
+    npk_mode: SensorMode = config.get("npk_mode", "mock")
+    moisture_dry_raw = config.get("moisture_dry_raw")
+    moisture_wet_raw = config.get("moisture_wet_raw")
+    ph_cal_401_raw = config.get("ph_cal_401_raw")
+    ph_cal_686_raw = config.get("ph_cal_686_raw")
+    ph_cal_918_raw = config.get("ph_cal_918_raw")
     interval: int = int(config.get("read_interval_seconds", 900))
     camera_mode: CameraMode = config.get("camera_mode", "mock")
     capture_interval: int = int(config.get("capture_interval_seconds", 900))
@@ -295,11 +352,41 @@ def run() -> None:
     client = get_supabase()
     device = resolve_device(client, device_name)
     device_id = device["id"]
-    moisture, ph, ambient, soil_temp = build_sensors(
+    try:
+        sync_sensor_modes(
+            client,
+            device_id,
+            moisture_mode=moisture_mode,
+            ph_mode=ph_mode,
+            ds18b20_mode=ds18b20_mode,
+            dht22_mode=dht22_mode,
+            npk_mode=npk_mode,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to sync sensor modes onto devices row; continuing"
+        )
+    moisture, ph, ambient, soil_temp, npk = build_sensors(
         ds18b20_mode=ds18b20_mode,
         dht22_mode=dht22_mode,
         moisture_mode=moisture_mode,
         ph_mode=ph_mode,
+        npk_mode=npk_mode,
+        moisture_dry_raw=(
+            int(moisture_dry_raw) if moisture_dry_raw is not None else None
+        ),
+        moisture_wet_raw=(
+            int(moisture_wet_raw) if moisture_wet_raw is not None else None
+        ),
+        ph_cal_401_raw=(
+            int(ph_cal_401_raw) if ph_cal_401_raw is not None else None
+        ),
+        ph_cal_686_raw=(
+            int(ph_cal_686_raw) if ph_cal_686_raw is not None else None
+        ),
+        ph_cal_918_raw=(
+            int(ph_cal_918_raw) if ph_cal_918_raw is not None else None
+        ),
     )
     camera = build_camera(
         camera_mode,
@@ -319,7 +406,7 @@ def run() -> None:
     logger.info(
         "Collector started for device '%s' (%s) profile=%s/%s, "
         "sensor interval %ds "
-        "(ds18b20=%s dht22=%s moisture=%s ph=%s), "
+        "(ds18b20=%s dht22=%s moisture=%s ph=%s npk=%s), "
         "capture interval %ds mode=%s "
         "resolution=%dx%d light_condition=%s camera_available=%s",
         device_name,
@@ -331,6 +418,7 @@ def run() -> None:
         dht22_mode,
         moisture_mode,
         ph_mode,
+        npk_mode,
         capture_interval,
         camera_mode,
         capture_width,
@@ -348,7 +436,7 @@ def run() -> None:
     camera_thread.start()
 
     run_sensor_loop(
-        client, device_name, moisture, ph, ambient, soil_temp, interval
+        client, device_name, moisture, ph, ambient, soil_temp, npk, interval
     )
 
     camera_thread.join(timeout=capture_interval + 5)

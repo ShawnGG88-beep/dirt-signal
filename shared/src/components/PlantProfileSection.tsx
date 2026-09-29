@@ -4,6 +4,16 @@ import { fetchProfileOptions, patchDeviceProfile } from "../data/client";
 
 import type { ProfileCropOption } from "../data/types";
 
+import {
+  grapeWineSeasonStartHint,
+} from "../lib/phenology";
+import {
+  getGrapeWineCultivarProfile,
+  grapeWineCultivarOptions,
+  WINKLER_INDEX_NOT_PHENOLOGY_NOTE,
+  type GrapeWineCultivarProfile,
+} from "../lib/growingConstants";
+
 
 
 interface PlantProfileSectionProps {
@@ -16,6 +26,10 @@ interface PlantProfileSectionProps {
 
   seasonStartDate?: string | null;
 
+  soilTexture?: string | null;
+
+  cultivar?: string | null;
+
   onProfileSaved: (
 
     cropType: string,
@@ -23,6 +37,10 @@ interface PlantProfileSectionProps {
     lifecycleStage: string,
 
     seasonStartDate?: string | null,
+
+    soilTexture?: string | null,
+
+    cultivar?: string | null,
 
   ) => void;
 
@@ -40,6 +58,10 @@ export function PlantProfileSection({
 
   seasonStartDate = null,
 
+  soilTexture = null,
+
+  cultivar = null,
+
   onProfileSaved,
 
 }: PlantProfileSectionProps) {
@@ -55,6 +77,10 @@ export function PlantProfileSection({
     seasonStartDate ?? "",
 
   );
+
+  const [draftSoilTexture, setDraftSoilTexture] = useState(soilTexture ?? "loam");
+
+  const [draftCultivar, setDraftCultivar] = useState(cultivar ?? "");
 
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -81,6 +107,22 @@ export function PlantProfileSection({
     setDraftSeasonStart(seasonStartDate ?? "");
 
   }, [seasonStartDate]);
+
+
+
+  useEffect(() => {
+
+    setDraftSoilTexture(soilTexture ?? "loam");
+
+  }, [soilTexture]);
+
+
+
+  useEffect(() => {
+
+    setDraftCultivar(cultivar ?? "");
+
+  }, [cultivar]);
 
 
 
@@ -160,15 +202,49 @@ export function PlantProfileSection({
 
 
 
+  useEffect(() => {
+
+    if (draftCrop !== "grape_wine" && draftCultivar !== "") {
+
+      setDraftCultivar("");
+
+    }
+
+  }, [draftCrop, draftCultivar]);
+
+
+
+  const cultivarOptions =
+
+    selectedCrop?.cultivars && selectedCrop.cultivars.length > 0
+
+      ? selectedCrop.cultivars
+
+      : grapeWineCultivarOptions();
+
+  const cultivarProfile = getGrapeWineCultivarProfile(
+
+    draftCrop === "grape_wine" ? draftCultivar : null,
+
+  );
+
+
+
   const profileDirty =
 
-    draftCrop !== cropType || draftStage !== lifecycleStage;
+    draftCrop !== cropType ||
+
+    draftStage !== lifecycleStage ||
+
+    (draftCultivar || null) !== (cultivar ?? null);
+
+  const textureDirty = (draftSoilTexture || null) !== (soilTexture ?? "loam");
 
   const seasonDirty =
 
     (draftSeasonStart.trim() || null) !== (seasonStartDate ?? null);
 
-  const dirty = profileDirty || seasonDirty;
+  const dirty = profileDirty || seasonDirty || textureDirty;
 
 
 
@@ -200,6 +276,10 @@ export function PlantProfileSection({
 
         lifecycle_stage: draftStage,
 
+        soil_texture: draftSoilTexture,
+
+        cultivar: draftCrop === "grape_wine" ? draftCultivar || "" : "",
+
       });
 
       onProfileSaved(
@@ -209,6 +289,10 @@ export function PlantProfileSection({
         updated.lifecycle_stage,
 
         updated.season_start_date ?? seasonStartDate,
+
+        updated.soil_texture ?? draftSoilTexture,
+
+        updated.cultivar ?? null,
 
       );
 
@@ -389,6 +473,90 @@ export function PlantProfileSection({
 
 
 
+        {draftCrop === "tomato" && (
+
+          <label className="plant-profile-field">
+
+            <span className="plant-profile-label">Soil texture</span>
+
+            <select
+
+              className="plant-profile-select"
+
+              value={draftSoilTexture}
+
+              disabled={!deviceId}
+
+              onChange={(e) => setDraftSoilTexture(e.target.value)}
+
+            >
+
+              <option value="sand">Sand</option>
+
+              <option value="sandy_loam">Sandy loam</option>
+
+              <option value="loam">Loam</option>
+
+              <option value="clay">Clay</option>
+
+            </select>
+
+            <span className="muted">
+
+              Placeholder depletion bands for moisture stability advisories.
+
+            </span>
+
+          </label>
+
+        )}
+
+
+
+        {draftCrop === "grape_wine" && (
+
+          <label className="plant-profile-field">
+
+            <span className="plant-profile-label">Cultivar</span>
+
+            <select
+
+              className="plant-profile-select"
+
+              value={draftCultivar}
+
+              disabled={!deviceId}
+
+              onChange={(e) => setDraftCultivar(e.target.value)}
+
+            >
+
+              <option value="">Not set (shared GDD bands)</option>
+
+              {cultivarOptions.map((option) => (
+
+                <option key={option.cultivar} value={option.cultivar}>
+
+                  {option.display_name}
+
+                </option>
+
+              ))}
+
+            </select>
+
+            <span className="muted">
+
+              Optional. Null keeps the shared Chardonnay GDD working points.
+
+            </span>
+
+          </label>
+
+        )}
+
+
+
         <label className="plant-profile-field">
 
           <span className="plant-profile-label">Season start</span>
@@ -406,6 +574,14 @@ export function PlantProfileSection({
             onChange={(e) => setDraftSeasonStart(e.target.value)}
 
           />
+
+          {draftCrop === "grape_wine" ? (
+            <p className="plant-profile-hint muted">
+              Southern Hemisphere default is 1 September (not applied
+              automatically). Hint for this year:{" "}
+              {grapeWineSeasonStartHint(new Date(), "Africa/Johannesburg")}.
+            </p>
+          ) : null}
 
         </label>
 
@@ -449,6 +625,10 @@ export function PlantProfileSection({
 
       )}
 
+      {cultivarProfile ? (
+        <GrapeCultivarReferencePanel profile={cultivarProfile} />
+      ) : null}
+
 
 
       {confirmOpen && (
@@ -457,9 +637,13 @@ export function PlantProfileSection({
 
           <p>
 
-            Reassigning this device to {cropLabel} ({stageLabel}). Past
+            Reassigning this device to {cropLabel} ({stageLabel}
 
-            readings keep their original profile. Continue?
+            {draftCultivar
+              ? `, ${cultivarProfile?.display_name ?? draftCultivar}`
+              : ""}
+
+            ). Past readings keep their original profile. Continue?
 
           </p>
 
@@ -507,5 +691,87 @@ export function PlantProfileSection({
 
   );
 
+}
+
+function GrapeCultivarReferencePanel({
+  profile,
+}: {
+  profile: GrapeWineCultivarProfile;
+}) {
+  const frost = profile.frost;
+  const water = profile.water_stress;
+  return (
+    <div className="plant-profile-reference">
+      <h3 className="plant-profile-label">Cultivar reference</h3>
+      <p className="muted">
+        {profile.display_name} · {profile.winkler_region_label}
+      </p>
+      <p className="muted plant-profile-hint">{WINKLER_INDEX_NOT_PHENOLOGY_NOTE}</p>
+      <p className="muted">
+        Frost coverage: {frost.coverage.replace(/_/g, " ")} ({frost.stage_label}
+        ). {frost.note}
+      </p>
+      {frost.deacclimation_note ? (
+        <p className="muted">{frost.deacclimation_note}</p>
+      ) : null}
+      {frost.el_rows ? (
+        <table className="cultivar-reference-table">
+          <caption className="muted">Pinot Noir E-L frost thresholds</caption>
+          <thead>
+            <tr>
+              <th>E-L</th>
+              <th>Threshold</th>
+            </tr>
+          </thead>
+          <tbody>
+            {frost.el_rows.map((row) => (
+              <tr key={`${row.el_min}-${row.el_max}`}>
+                <td>{row.label}</td>
+                <td>{row.threshold_c.toFixed(1)}°C</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : null}
+      {water.metric_type === "leaf_water_potential_gs50" &&
+      water.psi_mpa != null ? (
+        <p className="muted">
+          Water-stress reference ({water.metric_type}): Psi_gs50 = {water.psi_mpa}{" "}
+          ± {water.psi_mpa_plus_minus} {water.units}. {water.note}
+        </p>
+      ) : null}
+      {water.metric_type === "stem_water_potential" && water.stages ? (
+        <>
+          <p className="muted">
+            Water-stress reference ({water.metric_type}). {water.note}
+          </p>
+          <table className="cultivar-reference-table">
+            <caption className="muted">
+              Cabernet Sauvignon Psi_stem (manual comparison only)
+            </caption>
+            <thead>
+              <tr>
+                <th>Phenological stage</th>
+                <th>Psi_stem (MPa)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {water.stages.map((row) => (
+                <tr key={row.phenological_stage}>
+                  <td>{row.phenological_stage}</td>
+                  <td>{row.psi_stem_mpa.toFixed(1)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {water.rdi_note ? <p className="muted">{water.rdi_note}</p> : null}
+          {water.severity_warning ? (
+            <p className="muted">{water.severity_warning}</p>
+          ) : null}
+        </>
+      ) : null}
+      {water.open_gap ? <p className="muted">{water.note}</p> : null}
+    </div>
+  );
 }
 

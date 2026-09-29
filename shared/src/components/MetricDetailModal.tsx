@@ -21,6 +21,7 @@ import {
   type PlantEventTypeKey,
 } from "../lib/eventTypes";
 import { computeStats, type TrendDirection } from "../lib/stats";
+import { SENSOR_DETAIL_VT_NAME } from "../lib/viewTransition";
 import { EventTypeFilter } from "./EventMarkerRail";
 import { ExportButton } from "./ExportButton";
 import { RangePicker } from "./RangePicker";
@@ -190,7 +191,7 @@ export function MetricDetailModal({
 
   return (
     <div
-      className="modal-backdrop"
+      className="weather-horizon-drawer-backdrop"
       role="presentation"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -198,16 +199,17 @@ export function MetricDetailModal({
     >
       <div
         ref={panelRef}
-        className="modal-panel"
+        className="glass-l3 weather-horizon-drawer metric-detail-drawer"
+        style={{ viewTransitionName: SENSOR_DETAIL_VT_NAME }}
         role="dialog"
         aria-modal="true"
         aria-labelledby="metric-detail-title"
         tabIndex={-1}
       >
-        <header className="modal-header">
+        <header className="weather-horizon-drawer-header">
           <div>
             <h2 id="metric-detail-title">{metric.label}</h2>
-            <p className="subtitle">
+            <p className="subtitle muted">
               Detail · {preset} · {readings.length} points · {events.length}{" "}
               events
             </p>
@@ -220,7 +222,11 @@ export function MetricDetailModal({
               to={to}
               prefix={`dirt-signal-${metric.key}`}
             />
-            <button type="button" className="refresh-btn" onClick={onClose}>
+            <button
+              type="button"
+              className="weather-horizon-drawer-close"
+              onClick={onClose}
+            >
               Close
             </button>
           </div>

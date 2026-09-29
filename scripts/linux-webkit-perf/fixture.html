@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <title>Dirt Signal WebKitGTK perf fixture</title>
+  <style>
+    :root {
+      --terracotta: #e35336;
+      --apricot: #ffd3ac;
+      --heather: #9988a1;
+      --oxblood: #8a2b0e;
+      --cellar: #1f1113;
+      --cellar-raised: #3a2426;
+      --parchment: #fff4ea;
+      --glass-fill-l1: color-mix(in srgb, var(--cellar-raised) 55%, transparent);
+      --glass-fill-l2: color-mix(in srgb, var(--cellar-raised) 62%, transparent);
+      --glass-fill-l3: color-mix(in srgb, var(--cellar-raised) 78%, transparent);
+      --glass-border: color-mix(in srgb, var(--apricot) 10%, transparent);
+      --glass-rim: color-mix(in srgb, var(--apricot) 22%, transparent);
+      --glass-inset: color-mix(in srgb, var(--parchment) 8%, transparent);
+      --glass-blur-l1: 20px;
+      --glass-blur-l1-low: 12px;
+      --glass-blur-l2: 28px;
+      --glass-blur-l3: 36px;
+      --shadow-warm: 0 18px 48px -12px color-mix(in srgb, var(--oxblood) 40%, transparent);
+      --radius-l1: 16px;
+      --radius-l2: 24px;
+      color: var(--parchment);
+      background: var(--cellar);
+    }
+    html[data-perf-blur="low"] { --glass-blur-l1: var(--glass-blur-l1-low); }
+    html[data-perf-tick="1"] .glass-l1 {
+      backdrop-filter: blur(calc(var(--glass-blur-l1) + 0.5px)) saturate(160%);
+      -webkit-backdrop-filter: blur(calc(var(--glass-blur-l1) + 0.5px)) saturate(160%);
+    }
+    html[data-perf-tick="1"] .glass-l2 {
+      backdrop-filter: blur(calc(var(--glass-blur-l2) + 0.5px)) saturate(170%);
+      -webkit-backdrop-filter: blur(calc(var(--glass-blur-l2) + 0.5px)) saturate(170%);
+    }
+    html[data-perf-tick="0"] .sky-backdrop { filter: saturate(1.01); }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; min-height: 100vh; }
+    .sky-backdrop {
+      position: fixed; inset: 0; z-index: -1; pointer-events: none;
+      background:
+        radial-gradient(140% 100% at 12% -10%, color-mix(in srgb, var(--terracotta) 34%, transparent), transparent 58%),
+        radial-gradient(110% 90% at 95% 8%, color-mix(in srgb, var(--heather) 36%, transparent), transparent 55%),
+        radial-gradient(100% 80% at 50% 110%, color-mix(in srgb, var(--oxblood) 50%, transparent), transparent 62%),
+        var(--cellar);
+      background-size: 120% 120%, 120% 120%, 100% 100%, 100% 100%;
+      animation: drift 90s ease-in-out infinite alternate;
+    }
+    @keyframes drift {
+      from { background-position: 0% 0%, 100% 0%, 50% 100%, 0 0; }
+      to { background-position: 8% 4%, 92% 6%, 48% 96%, 0 0; }
+    }
+    .glass-l1, .glass-l2, .glass-l3 {
+      border: 1px solid var(--glass-border);
+      border-top-color: var(--glass-rim);
+      box-shadow: inset 0 1px 0 var(--glass-inset), var(--shadow-warm);
+      color: var(--parchment);
+    }
+    .glass-l1 {
+      background: var(--glass-fill-l1);
+      backdrop-filter: blur(var(--glass-blur-l1)) saturate(160%);
+      -webkit-backdrop-filter: blur(var(--glass-blur-l1)) saturate(160%);
+      border-radius: var(--radius-l1);
+    }
+    .glass-l2 {
+      background: var(--glass-fill-l2);
+      backdrop-filter: blur(var(--glass-blur-l2)) saturate(170%);
+      -webkit-backdrop-filter: blur(var(--glass-blur-l2)) saturate(170%);
+      border-radius: var(--radius-l2);
+    }
+    .glass-l3 {
+      background: var(--glass-fill-l3);
+      backdrop-filter: blur(var(--glass-blur-l3)) saturate(180%);
+      -webkit-backdrop-filter: blur(var(--glass-blur-l3)) saturate(180%);
+      border-radius: 28px;
+    }
+    main { padding: 24px; display: grid; gap: 16px; }
+    .weather-horizon { padding: 20px; min-height: 220px; }
+    .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .tile { padding: 16px; min-height: 140px; }
+    h1 { margin: 0 0 8px; font-size: 1.25rem; }
+    .muted { opacity: 0.75; font-size: 0.875rem; }
+    .band {
+      height: 120px; margin-top: 12px; border-radius: 12px;
+      background: linear-gradient(90deg, #3a2426, #8a2b0e, #9988a1, #e35336, #ffd3ac);
+      opacity: 0.55;
+    }
+  </style>
+</head>
+<body>
+  <div class="sky-backdrop" aria-hidden="true"></div>
+  <main>
+    <section class="glass-l2 weather-horizon">
+      <h1>Weather horizon fixture</h1>
+      <p class="muted">Ambient backdrop + L2 glass + L1 tiles (WebKitGTK probe)</p>
+      <div class="band"></div>
+    </section>
+    <section class="tiles">
+      <div class="glass-l1 tile"><strong>Moisture</strong><p>36.5 %</p></div>
+      <div class="glass-l1 tile"><strong>pH</strong><p>6.4</p></div>
+      <div class="glass-l1 tile"><strong>Soil temp</strong><p>21.6 °C</p></div>
+      <div class="glass-l1 tile"><strong>Ambient</strong><p>24.1 °C</p></div>
+      <div class="glass-l1 tile"><strong>Humidity</strong><p>48 %</p></div>
+      <div class="glass-l1 tile"><strong>VPD</strong><p>1.2 kPa</p></div>
+      <div class="glass-l3 tile"><strong>Drawer L3</strong><p>Detail surface</p></div>
+      <div class="glass-l2 tile"><strong>Needs attention</strong><p>Act strip</p></div>
+    </section>
+  </main>
+  <script>
+    const REFRESH_BUCKETS = [30, 60, 90, 120, 144];
+    function percentile(sorted, p) {
+      if (!sorted.length) return 0;
+      return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))];
+    }
+    function summarise(deltas) {
+      const sorted = [...deltas].sort((a, b) => a - b);
+      const sum = sorted.reduce((a, b) => a + b, 0);
+      return {
+        avg: sorted.length ? sum / sorted.length : 0,
+        p95: percentile(sorted, 0.95),
+        max: sorted[sorted.length - 1] || 0,
+        median: percentile(sorted, 0.5),
+      };
+    }
+    function nearestBucket(hz) {
+      let best = null, bestErr = Infinity;
+      for (const b of REFRESH_BUCKETS) {
+        const err = Math.abs(hz - b) / b;
+        if (err < bestErr) { bestErr = err; best = b; }
+      }
+      return bestErr <= 0.08 ? best : null;
+    }
+    function waitFrame() {
+      return new Promise((r) => requestAnimationFrame((t) => r(t)));
+    }
+    function measureSyncPaintCost(iterations = 48) {
+      const root = document.documentElement;
+      const panels = [...document.querySelectorAll(".sky-backdrop, .glass-l1, .glass-l2, .glass-l3, .weather-horizon")];
+      const costs = [];
+      for (let i = 0; i < iterations; i++) {
+        const t0 = performance.now();
+        root.setAttribute("data-perf-tick", String(i % 2));
+        for (const el of panels) void el.getBoundingClientRect();
+        void document.body.offsetHeight;
+        costs.push(performance.now() - t0);
+      }
+      root.removeAttribute("data-perf-tick");
+      const s = summarise(costs);
+      return { iterations: costs.length, avgMs: s.avg, p95Ms: s.p95, maxMs: s.max };
+    }
+    async function inferRefresh(sampleMs = 1000) {
+      for (let i = 0; i < 8; i++) await waitFrame();
+      const deltas = [];
+      let last = await waitFrame();
+      const start = last;
+      while (last - start < sampleMs) {
+        const now = await waitFrame();
+        const d = now - last;
+        last = now;
+        if (d > 0 && d < 42) deltas.push(d);
+      }
+      const s = summarise(deltas);
+      const hz = s.median > 0 ? 1000 / s.median : 0;
+      return { hz, bucketHz: nearestBucket(hz), medianFrameMs: s.median };
+    }
+    async function runProbe(lowBlur, durationMs = 2500) {
+      const root = document.documentElement;
+      root.style.removeProperty("--glass-blur-l1");
+      root.removeAttribute("data-perf-blur");
+      if (lowBlur) {
+        root.style.setProperty("--glass-blur-l1", "12px");
+        root.setAttribute("data-perf-blur", "low");
+      }
+      await waitFrame(); await waitFrame();
+      const blurL1 = getComputedStyle(root).getPropertyValue("--glass-blur-l1").trim();
+      const refresh = await inferRefresh(1000);
+      const deltas = [];
+      let last = await waitFrame();
+      const start = last;
+      while (last - start < durationMs) {
+        const now = await waitFrame();
+        const d = now - last;
+        last = now;
+        if (d > 0 && d < 250) deltas.push(d);
+      }
+      const syncPaintCost = measureSyncPaintCost(48);
+      root.removeAttribute("data-perf-blur");
+      root.style.removeProperty("--glass-blur-l1");
+      const s = summarise(deltas);
+      const bucket = refresh.bucketHz;
+      const rafLooksVsyncCapped =
+        deltas.length >= 10 &&
+        bucket != null &&
+        Math.abs(s.avg - 1000 / bucket) / (1000 / bucket) <= 0.1;
+      return {
+        frames: deltas.length,
+        durationMs: last - start,
+        avgFrameMs: s.avg,
+        p95FrameMs: s.p95,
+        maxFrameMs: s.max,
+        estimatedFps: s.avg > 0 ? 1000 / s.avg : 0,
+        displayRefreshHz: refresh.hz > 0 ? refresh.hz : null,
+        refreshBucketHz: bucket,
+        rafLooksVsyncCapped,
+        syncPaintCost,
+        blurL1,
+        userAgent: navigator.userAgent,
+      };
+    }
+    (async () => {
+      await new Promise((r) => setTimeout(r, 400));
+      const result = {
+        default: await runProbe(false),
+        lowL1: await runProbe(true),
+        measuredAt: new Date().toISOString(),
+      };
+      document.documentElement.setAttribute("data-perf-result", JSON.stringify(result));
+      document.title = "DIRT_PERF_DONE";
+      console.info("[dirt-perf-fixture]", result);
+    })().catch((err) => {
+      document.documentElement.setAttribute("data-perf-error", String(err));
+      document.title = "DIRT_PERF_ERROR";
+    });
+  </script>
+</body>
+</html>

@@ -29,6 +29,11 @@ const RULE_LABELS: Record<AlertRuleType, string> = {
   collector_silence: "Collector silence",
   irrigation_due: "Irrigation due",
   disease_pressure: "Disease pressure (proxy)",
+  forecast_chill_risk: "Forecast chill / frost",
+  tomato_early_blight: "Tomato early blight (TOM-CAST)",
+  tomato_late_blight: "Tomato late blight (Wallin)",
+  tomato_powdery_mildew: "Tomato powdery mildew",
+  tomato_moisture_cracking: "Tomato moisture / cracking",
 };
 
 const RULE_NOTES: Partial<Record<AlertRuleType, string>> = {
@@ -40,6 +45,16 @@ const RULE_NOTES: Partial<Record<AlertRuleType, string>> = {
     "Early-warning tier; most likely to be noisy. Ships disabled.",
   irrigation_due:
     "Only fires when a dry-down projection is available and not suppressed.",
+  forecast_chill_risk:
+    "Uses Open-Meteo forecast night lows. Blossom-drop tier only when lifecycle stage is flowering.",
+  tomato_early_blight:
+    "TOM-CAST-style DSV from observed humidity/temperature; commits closed days only.",
+  tomato_late_blight:
+    "Wallin-simplified DSV from observed wet hours; commits closed days only.",
+  tomato_powdery_mildew:
+    "Leveillula taurica primary; Oidium neolycopersici shown as candidate/unvalidated.",
+  tomato_moisture_cracking:
+    "Cracking/BER influx after dry spell plus heavy forecast precipitation; not deficit irrigation.",
 };
 
 function severityColour(severity: AlertSeverity): string {

@@ -1,35 +1,44 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
+import { flushSync } from "react-dom";
 import {
   fetchDailyAggregates,
   fetchEvents,
   fetchHealth,
+  fetchLatestAdvisoryDigest,
   fetchLatestReading,
   fetchReadingsRange,
+  fetchWeatherForecast,
 } from "../data/client";
 import {
   staleAfterMsFromInterval,
+  type DailyAdvisoryDigestPayload,
+  type DeviceSensorModeFields,
   type PlantEvent,
   type SensorReading,
+  type WeatherForecastResponse,
 } from "../data/types";
-import { BandPositionBar } from "../components/BandPositionBar";
+import { DashboardStatusSentence } from "../components/DashboardStatusSentence";
 import { LogEventForm } from "../components/LogEventForm";
 import { MetricDetailModal } from "../components/MetricDetailModal";
+import { NeedsAttention } from "../components/NeedsAttention";
 import { PlantProfileSection } from "../components/PlantProfileSection";
-import { Sparkline } from "../components/Sparkline";
+import { SensorTile } from "../components/SensorTile";
+import { formatRelativeAge, SystemStatusLine } from "../components/SystemStatusLine";
+import { WeatherHorizon } from "../components/WeatherHorizon";
 import {
-  STATUS_GLYPH,
-  STATUS_TEXT,
-} from "../components/StatusIndicator";
-import {
-  formatRelativeAge,
-  SystemStatusLine,
-} from "../components/SystemStatusLine";
+  attentionClausesFromLanes,
+  buildNeedsAttentionItems,
+  buildStatusSentence,
+  sparklineIsSteady,
+} from "../lib/dashboardStatus";
+import { buildConsequenceLanes } from "../lib/consequenceLanes";
 import { DEFAULT_DEVICE_TIMEZONE } from "../lib/dayNight";
 import { useSelectedDeviceName } from "../lib/device";
 import {
@@ -41,27 +50,40 @@ import { eventTypeLabel } from "../lib/eventTypes";
 import {
   DEFAULT_CROP_TYPE,
   DEFAULT_LIFECYCLE_STAGE,
+  TOMATO_GDD_STAGE_BANDS_PROVENANCE,
+  getGrapeWineGddProvenance,
   getScoringSemantic,
-  SAMPLING_LIMITATIONS,
-  type ScoringSemantic,
 } from "../lib/growingConstants";
+import { formatGrapeWineStageLine, formatTomatoStageLine } from "../lib/phenology";
 import {
-  formatMetricValue,
-  getAmbientBoundsForProfile,
   getMetricBoundsForProfile,
   METRICS,
-  scoreMetricValue,
+  scoreMetricForProfile,
   type MetricDef,
   type MetricKey,
   type MetricScore,
-  type MetricStatus,
   type RangePreset,
+  type SoilMoistureAnchors,
 } from "../lib/metrics";
+import { metricIsSimulated } from "../lib/sensorModes";
 import { useAlertPoll } from "../lib/useAlertPoll";
+import { usePrefersReducedMotion } from "../lib/accessibility";
+import {
+  runViewTransition,
+  SENSOR_DETAIL_VT_NAME,
+} from "../lib/viewTransition";
+import { sliceHorizonHours } from "../lib/weatherHorizon";
 
 const POLL_MS = 30_000;
-const SPARK_WINDOW_LABEL = "6h";
-const VPD_LIMITATION = SAMPLING_LIMITATIONS[3];
+const SPARK_HOURS = 24;
+const SPARK_FETCH_LIMIT = 500;
+const VPD_LIMITATION = "Air VPD · leaf≈air assumption";
+const ENTER_SESSION_KEY = "dirt-signal-dashboard-enter-done";
+
+/** Physical + derived streams shown as sensor tiles (not diagnostics). */
+const TILE_METRICS: MetricDef[] = METRICS.filter(
+  (m) => m.tier === "primary" || m.tier === "context",
+);
 
 function scoreForCard(
   key: MetricKey,
@@ -70,205 +92,17 @@ function scoreForCard(
   lifecycleStage: string,
   recordedAt: string | null | undefined,
   timeZone: string,
-  derived?: boolean,
+  derived: boolean | undefined,
+  anchors: SoilMoistureAnchors | null,
 ): MetricScore {
-  const semantic = getScoringSemantic(cropType, lifecycleStage);
-  if (derived || key === "moisture_raw") {
-    return scoreMetricValue(value, null, semantic, { displayOnly: true });
-  }
-  if (key === "ambient_temp_c") {
-    const at = recordedAt ?? new Date().toISOString();
-    const bounds = getAmbientBoundsForProfile(
-      at,
-      cropType,
-      lifecycleStage,
-      timeZone,
-    );
-    return scoreMetricValue(value, bounds, semantic);
-  }
-  const bounds = getMetricBoundsForProfile(key, cropType, lifecycleStage);
-  return scoreMetricValue(value, bounds, semantic);
-}
-
-function sparkDelta(
-  values: number[],
-  unit: string,
-): { text: string; direction: "up" | "down" | "flat" } | null {
-  if (values.length < 2) return null;
-  const first = values[0];
-  const last = values[values.length - 1];
-  const delta = last - first;
-  const abs = Math.abs(delta);
-  const formatted = Number.isInteger(abs) ? String(abs) : abs.toFixed(1);
-  const suffix = unit ? `${formatted}${unit}` : formatted;
-  if (Math.abs(delta) < 1e-9) {
-    return { text: `→ 0${unit ? unit : ""} / ${SPARK_WINDOW_LABEL}`, direction: "flat" };
-  }
-  if (delta > 0) {
-    return { text: `↑ ${suffix} / ${SPARK_WINDOW_LABEL}`, direction: "up" };
-  }
-  return { text: `↓ ${suffix} / ${SPARK_WINDOW_LABEL}`, direction: "down" };
-}
-
-interface PrimaryCardProps {
-  metric: MetricDef;
-  value: number | null | undefined;
-  score: MetricScore;
-  sparkValues: number[];
-  scoringSemantic: ScoringSemantic;
-  fetching: boolean;
-  rangeError: string | null;
-  onRetryRange: () => void;
-  onOpen: () => void;
-}
-
-function PrimaryMetricCard({
-  metric,
-  value,
-  score,
-  sparkValues,
-  scoringSemantic,
-  fetching,
-  rangeError,
-  onRetryRange,
-  onOpen,
-}: PrimaryCardProps) {
-  const delta = sparkDelta(sparkValues, metric.unit);
-  const isNull = value === null || value === undefined;
-  const status: MetricStatus = isNull ? "unknown" : score.status;
-
-  function activate() {
-    onOpen();
-  }
-
-  function onKeyDown(e: ReactKeyboardEvent) {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      activate();
-    }
-  }
-
-  return (
-    <div
-      className={`metric-card metric-card-primary${fetching ? " metric-card-fetching" : ""}`}
-      role="button"
-      tabIndex={0}
-      onClick={activate}
-      onKeyDown={onKeyDown}
-      aria-label={`${metric.label}: ${formatMetricValue(value, metric.unit)}, ${STATUS_TEXT[status]}`}
-    >
-      <div className="metric-header">
-        <span className="metric-label">{metric.label}</span>
-        {delta && (
-          <span className={`metric-delta metric-delta-${delta.direction}`}>
-            {delta.text}
-          </span>
-        )}
-      </div>
-      <div className="metric-value tabular-nums">
-        {formatMetricValue(value, metric.unit)}
-      </div>
-      <BandPositionBar
-        bounds={score.bounds}
-        position={score.position}
-        status={status}
-        scoringSemantic={scoringSemantic}
-        disabled={isNull || score.bounds === null}
-      />
-      <div className={`metric-status metric-status-${status}`}>
-        <span className="metric-status-glyph" aria-hidden="true">
-          {STATUS_GLYPH[status]}
-        </span>
-        <span className="metric-status-text">{STATUS_TEXT[status]}</span>
-      </div>
-      <div className="metric-spark">
-        {rangeError ? (
-          <button
-            type="button"
-            className="metric-inline-retry"
-            onClick={(e) => {
-              e.stopPropagation();
-              onRetryRange();
-            }}
-          >
-            Sparkline failed · retry
-          </button>
-        ) : (
-          <Sparkline
-            values={sparkValues}
-            bounds={score.bounds}
-            width={160}
-            height={36}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-interface ContextCardProps {
-  metric: MetricDef;
-  value: number | null | undefined;
-  score: MetricScore;
-  fetching: boolean;
-  onOpen: () => void;
-}
-
-function ContextMetricCard({
-  metric,
-  value,
-  score,
-  fetching,
-  onOpen,
-  trendText,
-}: ContextCardProps & { trendText?: string | null }) {
-  const isNull = value === null || value === undefined;
-  const derived = metric.derived === true;
-  const status: MetricStatus = isNull ? "unknown" : score.status;
-
-  function onKeyDown(e: ReactKeyboardEvent) {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      onOpen();
-    }
-  }
-
-  return (
-    <div
-      className={`metric-card metric-card-context${fetching ? " metric-card-fetching" : ""}`}
-      role="button"
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={onKeyDown}
-      aria-label={
-        derived
-          ? `${metric.label}: ${formatMetricValue(value, metric.unit)}`
-          : `${metric.label}: ${formatMetricValue(value, metric.unit)}, ${STATUS_TEXT[status]}`
-      }
-    >
-      <div className="metric-header">
-        <span className="metric-label">{metric.label}</span>
-        {!derived && (
-          <div className={`metric-status metric-status-${status}`}>
-            <span className="metric-status-glyph" aria-hidden="true">
-              {STATUS_GLYPH[status]}
-            </span>
-            <span className="metric-status-text">{STATUS_TEXT[status]}</span>
-          </div>
-        )}
-      </div>
-      <div className="metric-value metric-value-compact tabular-nums">
-        {formatMetricValue(value, metric.unit)}
-      </div>
-      {trendText && (
-        <div className="metric-trend muted">{trendText}</div>
-      )}
-      {derived && metric.key === "vpd_kpa" && (
-        <p className="metric-caveat muted" title={VPD_LIMITATION}>
-          Air VPD · leaf≈air assumption
-        </p>
-      )}
-    </div>
+  return scoreMetricForProfile(
+    key,
+    value,
+    cropType,
+    lifecycleStage,
+    recordedAt,
+    timeZone,
+    { derived, anchors },
   );
 }
 
@@ -312,9 +146,7 @@ function DiagnosticsStrip({
           {expanded ? "▾" : "▸"}
         </span>
         <span>Diagnostics</span>
-        <span className="diagnostics-hint">
-          display only, not scored
-        </span>
+        <span className="diagnostics-hint">display only, not scored</span>
       </div>
       {expanded && (
         <div className="diagnostics-body">
@@ -325,31 +157,31 @@ function DiagnosticsStrip({
           >
             <span className="diagnostics-item-label">Raw ADC</span>
             <span className="diagnostics-item-value tabular-nums">
-              {raw === null || raw === undefined ? "—" : String(raw)}
+              {raw === null || raw === undefined ? "-" : String(raw)}
             </span>
           </button>
           <div className="diagnostics-item diagnostics-item-static">
             <span className="diagnostics-item-label">EC µS/cm</span>
             <span className="diagnostics-item-value tabular-nums">
-              {ec === null ? "—" : String(ec)}
+              {ec === null ? "-" : String(ec)}
             </span>
           </div>
           <div className="diagnostics-item diagnostics-item-static">
             <span className="diagnostics-item-label">N est.</span>
             <span className="diagnostics-item-value tabular-nums">
-              {n === null ? "—" : String(n)}
+              {n === null ? "-" : String(n)}
             </span>
           </div>
           <div className="diagnostics-item diagnostics-item-static">
             <span className="diagnostics-item-label">P est.</span>
             <span className="diagnostics-item-value tabular-nums">
-              {p === null ? "—" : String(p)}
+              {p === null ? "-" : String(p)}
             </span>
           </div>
           <div className="diagnostics-item diagnostics-item-static">
             <span className="diagnostics-item-label">K est.</span>
             <span className="diagnostics-item-value tabular-nums">
-              {k === null ? "—" : String(k)}
+              {k === null ? "-" : String(k)}
             </span>
           </div>
         </div>
@@ -394,6 +226,12 @@ export function Dashboard({
   );
   const [timeZone, setTimeZone] = useState(DEFAULT_DEVICE_TIMEZONE);
   const [seasonStartDate, setSeasonStartDate] = useState<string | null>(null);
+  const [soilTexture, setSoilTexture] = useState<string | null>("loam");
+  const [cultivar, setCultivar] = useState<string | null>(null);
+  const [soilAnchors, setSoilAnchors] = useState<SoilMoistureAnchors | null>(
+    null,
+  );
+  const [sensorModes, setSensorModes] = useState<DeviceSensorModeFields>({});
   const [cumulativeGdd, setCumulativeGdd] = useState<number | null>(null);
   const [gddDaysExcluded, setGddDaysExcluded] = useState(0);
   const [gddUnavailable, setGddUnavailable] = useState<string | null>(
@@ -401,6 +239,34 @@ export function Dashboard({
   );
   const [drydownLine, setDrydownLine] = useState<string | null>(null);
   const { openNotifyCount, worstNotifySeverity } = useAlertPoll();
+  const reduceMotion = usePrefersReducedMotion();
+  const [enterActive, setEnterActive] = useState(() => {
+    if (typeof sessionStorage === "undefined") return false;
+    try {
+      return sessionStorage.getItem(ENTER_SESSION_KEY) !== "1";
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    if (!enterActive) return;
+    document.documentElement.setAttribute("data-dashboard-enter", "true");
+    const ms = reduceMotion ? 0 : 900;
+    const t = setTimeout(() => {
+      document.documentElement.removeAttribute("data-dashboard-enter");
+      setEnterActive(false);
+      try {
+        sessionStorage.setItem(ENTER_SESSION_KEY, "1");
+      } catch {
+        /* ignore */
+      }
+    }, ms);
+    return () => {
+      clearTimeout(t);
+      document.documentElement.removeAttribute("data-dashboard-enter");
+    };
+  }, [enterActive, reduceMotion]);
   const [sidecarReachable, setSidecarReachable] = useState<boolean | null>(
     null,
   );
@@ -416,6 +282,15 @@ export function Dashboard({
   const [logEventOpen, setLogEventOpen] = useState(false);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [weatherForecast, setWeatherForecast] =
+    useState<WeatherForecastResponse | null>(null);
+  const [weatherError, setWeatherError] = useState<string | null>(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  const [advisoryDigest, setAdvisoryDigest] =
+    useState<DailyAdvisoryDigestPayload | null>(null);
+  const [advisoryComputedAt, setAdvisoryComputedAt] = useState<string | null>(
+    null,
+  );
   const returnFocusEl = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -426,10 +301,10 @@ export function Dashboard({
   const refreshRange = useCallback(async () => {
     try {
       const range = await fetchReadingsRange(
-        new Date(Date.now() - 6 * 60 * 60 * 1000),
+        new Date(Date.now() - SPARK_HOURS * 60 * 60 * 1000),
         new Date(),
         deviceName,
-        120,
+        SPARK_FETCH_LIMIT,
       );
       setHistory(range.readings);
       setRangeError(null);
@@ -452,6 +327,31 @@ export function Dashboard({
     }
   }, [deviceName]);
 
+  const refreshWeather = useCallback(async () => {
+    setWeatherLoading(true);
+    try {
+      const result = await fetchWeatherForecast(deviceName, 168);
+      setWeatherForecast(result);
+      setWeatherError(null);
+    } catch (err) {
+      setWeatherError(
+        err instanceof Error ? err.message : "Failed to load weather forecast",
+      );
+    } finally {
+      setWeatherLoading(false);
+    }
+  }, [deviceName]);
+
+  const refreshAdvisories = useCallback(async () => {
+    try {
+      const result = await fetchLatestAdvisoryDigest(deviceName);
+      setAdvisoryDigest(result.digest ?? null);
+      setAdvisoryComputedAt(result.computed_at ?? null);
+    } catch {
+      // Digest lanes are additive; keep prior digest on failure.
+    }
+  }, [deviceName]);
+
   const refresh = useCallback(async () => {
     setFetching(true);
 
@@ -468,7 +368,6 @@ export function Dashboard({
         setHealthOk(false);
       });
 
-    // One latest-reading fetch per refresh, shared with the dry-down task.
     const latestPromise = fetchLatestReading(deviceName);
 
     const latestTask = latestPromise
@@ -479,6 +378,19 @@ export function Dashboard({
         setLifecycleStage(latest.lifecycle_stage ?? DEFAULT_LIFECYCLE_STAGE);
         setTimeZone(latest.timezone ?? DEFAULT_DEVICE_TIMEZONE);
         setSeasonStartDate(latest.season_start_date ?? null);
+        setSoilTexture(latest.soil_texture ?? "loam");
+        setCultivar(latest.cultivar ?? null);
+        setSoilAnchors({
+          fieldCapacityPct: latest.soil_field_capacity_raw ?? null,
+          refillPointPct: latest.soil_refill_point_raw ?? null,
+        });
+        setSensorModes({
+          moisture_mode: latest.moisture_mode ?? null,
+          ph_mode: latest.ph_mode ?? null,
+          ds18b20_mode: latest.ds18b20_mode ?? null,
+          dht22_mode: latest.dht22_mode ?? null,
+          npk_mode: latest.npk_mode ?? null,
+        });
         setLatestError(null);
       })
       .catch((err) => {
@@ -521,8 +433,17 @@ export function Dashboard({
         const crop = latest.crop_type ?? DEFAULT_CROP_TYPE;
         const stage = latest.lifecycle_stage ?? DEFAULT_LIFECYCLE_STAGE;
         const bounds = getMetricBoundsForProfile("moisture_pct", crop, stage);
+        const refill = latest.soil_refill_point_raw;
+        const fc = latest.soil_field_capacity_raw;
+        const moistureLowerBound =
+          bounds?.min ??
+          (typeof refill === "number" &&
+          typeof fc === "number" &&
+          fc > refill
+            ? refill
+            : null);
         const result = projectDrydown(range.readings, eventsRes.events, {
-          moistureLowerBound: bounds?.min ?? null,
+          moistureLowerBound,
           now: new Date(),
         });
         if (result.projection && result.projection.hours_to_lower_bound > 0) {
@@ -540,6 +461,8 @@ export function Dashboard({
 
     const rangeTask = refreshRange();
     const eventsTask = refreshEvents();
+    const weatherTask = refreshWeather();
+    const advisoriesTask = refreshAdvisories();
 
     await Promise.allSettled([
       healthTask,
@@ -548,14 +471,13 @@ export function Dashboard({
       eventsTask,
       gddTask,
       drydownTask,
+      weatherTask,
+      advisoriesTask,
     ]);
     setLastPollAt(new Date());
     setFetching(false);
-  }, [deviceName, refreshRange, refreshEvents]);
+  }, [deviceName, refreshRange, refreshEvents, refreshWeather, refreshAdvisories]);
 
-  // Poll on an interval; pause while the tab is hidden and refetch as soon
-  // as it becomes visible again, so a backgrounded phone does not burn
-  // requests and a foregrounded one is immediately fresh.
   useEffect(() => {
     void refresh();
     const timer = setInterval(() => {
@@ -589,15 +511,52 @@ export function Dashboard({
   }, [profileOpen]);
 
   const semantic = getScoringSemantic(cropType, lifecycleStage);
-  const primary = METRICS.filter((m) => m.tier === "primary");
-  const context = METRICS.filter((m) => m.tier === "context");
 
   function openMetric(key: MetricKey) {
     const active = document.activeElement;
     if (active instanceof HTMLElement) {
       returnFocusEl.current = active;
     }
-    onOpenMetric(key);
+    const tile = document.querySelector<HTMLElement>(
+      `[data-sensor-tile="${key}"]`,
+    );
+    if (tile) {
+      tile.style.viewTransitionName = SENSOR_DETAIL_VT_NAME;
+    }
+    void runViewTransition(() => {
+      flushSync(() => {
+        onOpenMetric(key);
+      });
+    }).finally(() => {
+      if (tile) tile.style.viewTransitionName = "";
+    });
+  }
+
+  function closeMetric() {
+    const drawer = document.querySelector<HTMLElement>(
+      ".metric-detail-drawer",
+    );
+    const tileKey = detailMetric;
+    const tile =
+      tileKey != null
+        ? document.querySelector<HTMLElement>(
+            `[data-sensor-tile="${tileKey}"]`,
+          )
+        : null;
+    if (drawer) {
+      drawer.style.viewTransitionName = SENSOR_DETAIL_VT_NAME;
+    }
+    void runViewTransition(() => {
+      flushSync(() => {
+        onCloseMetric();
+      });
+      if (tile) {
+        tile.style.viewTransitionName = SENSOR_DETAIL_VT_NAME;
+      }
+    }).finally(() => {
+      if (tile) tile.style.viewTransitionName = "";
+      if (drawer) drawer.style.viewTransitionName = "";
+    });
   }
 
   function sparkFor(key: MetricKey): number[] {
@@ -618,28 +577,81 @@ export function Dashboard({
       .filter((v): v is number => typeof v === "number");
   }
 
-  function valueFor(key: MetricKey): number | null | undefined {
-    if (key === "vpd_kpa") {
-      return vapourPressureDeficitKpa(
-        reading?.ambient_temp_c,
-        reading?.ambient_humidity_pct,
-      );
+  const scoredTiles = useMemo(() => {
+    function valueOf(key: MetricKey): number | null | undefined {
+      if (key === "vpd_kpa") {
+        return vapourPressureDeficitKpa(
+          reading?.ambient_temp_c,
+          reading?.ambient_humidity_pct,
+        );
+      }
+      if (key === "dew_point_c") {
+        return dewPointC(
+          reading?.ambient_temp_c,
+          reading?.ambient_humidity_pct,
+        );
+      }
+      return reading?.[key as keyof SensorReading] as
+        | number
+        | null
+        | undefined;
     }
-    if (key === "dew_point_c") {
-      return dewPointC(reading?.ambient_temp_c, reading?.ambient_humidity_pct);
-    }
-    return reading?.[key as keyof SensorReading] as number | null | undefined;
-  }
 
-  function trendFor(key: MetricKey): string | null {
-    const values = sparkFor(key);
-    if (values.length < 2) return null;
-    const delta = values[values.length - 1] - values[0];
-    if (Math.abs(delta) < 1e-6) return `→ / ${SPARK_WINDOW_LABEL}`;
-    const abs = Math.abs(delta);
-    const formatted = abs >= 10 ? abs.toFixed(0) : abs.toFixed(2);
-    return `${delta > 0 ? "↑" : "↓"} ${formatted} / ${SPARK_WINDOW_LABEL}`;
-  }
+    return TILE_METRICS.map((metric) => {
+      const value = valueOf(metric.key);
+      const score = scoreForCard(
+        metric.key,
+        value,
+        cropType,
+        lifecycleStage,
+        reading?.recorded_at,
+        timeZone,
+        metric.derived,
+        soilAnchors,
+      );
+      return { metric, value, score };
+    });
+  }, [reading, cropType, lifecycleStage, timeZone, soilAnchors]);
+
+  const consequence = useMemo(() => {
+    const hours = weatherForecast
+      ? sliceHorizonHours(weatherForecast.hours, 48, nowMs)
+      : [];
+    return buildConsequenceLanes({
+      digest: advisoryDigest,
+      hours,
+      timeZone,
+      aggregateDaily: false,
+    });
+  }, [weatherForecast, advisoryDigest, timeZone, nowMs]);
+
+  const needsAttention = useMemo(
+    () =>
+      buildNeedsAttentionItems({
+        metrics: scoredTiles.map((t) => ({
+          key: t.metric.key,
+          label: t.metric.label,
+          score: t.score,
+          isNull: t.value === null || t.value === undefined,
+          recordedAt: reading?.recorded_at ?? null,
+        })),
+        lanes: consequence.lanes,
+        nowMs,
+        staleAfterMs,
+      }),
+    [scoredTiles, consequence.lanes, reading?.recorded_at, nowMs, staleAfterMs],
+  );
+
+  const moistureSpark = sparkFor("moisture_pct");
+  const moistureSteady = sparklineIsSteady(moistureSpark);
+  const statusSentence = buildStatusSentence({
+    metricLabels: TILE_METRICS.map((m) => m.label),
+    reportingCount: scoredTiles.filter(
+      (t) => t.value !== null && t.value !== undefined,
+    ).length,
+    moistureSteady,
+    attentionClauses: attentionClausesFromLanes(consequence.lanes, timeZone),
+  });
 
   const gddDaysElapsed =
     seasonStartDate != null
@@ -652,39 +664,66 @@ export function Dashboard({
         )
       : null;
 
+  const gddProvisional =
+    cropType === "grape_wine" || cropType === "tomato";
+
+  const seasonDetail = (
+    <>
+      {gddUnavailable === "no_season_start" || seasonStartDate == null ? (
+        <>
+          Degree days unavailable.{" "}
+          <button
+            type="button"
+            className="link-btn"
+            onClick={() => setProfileOpen(true)}
+          >
+            Set season start
+          </button>
+        </>
+      ) : (
+        <>
+          {cumulativeGdd != null ? `${cumulativeGdd.toFixed(0)} °C·d` : "-"} ·{" "}
+          {gddDaysElapsed}d since season start
+          {gddDaysExcluded > 0
+            ? ` · ${gddDaysExcluded}d excluded (sparse)`
+            : ""}
+          {cropType === "grape_wine" && cumulativeGdd != null ? (
+            <>
+              {" "}
+              · current stage: {formatGrapeWineStageLine(cumulativeGdd, cultivar)}{" "}
+              <span title={getGrapeWineGddProvenance(cultivar)}>
+                ({getGrapeWineGddProvenance(cultivar)})
+              </span>
+            </>
+          ) : null}
+          {cropType === "tomato" && cumulativeGdd != null ? (
+            <>
+              {" "}
+              · GDD-inferred stage: {formatTomatoStageLine(cumulativeGdd)}{" "}
+              <span title={TOMATO_GDD_STAGE_BANDS_PROVENANCE}>
+                ({TOMATO_GDD_STAGE_BANDS_PROVENANCE})
+              </span>
+            </>
+          ) : null}
+          <span title="Indoor degree days under artificial light are not comparable to field GDD / Winkler.">
+            {" "}
+            (device degree days)
+          </span>
+        </>
+      )}
+    </>
+  );
+
   return (
     <div className="dashboard">
       <header className="dashboard-header">
         <div>
           <h1>Dirt Signal</h1>
-          <p className="dashboard-gdd muted">
-            {gddUnavailable === "no_season_start" || seasonStartDate == null ? (
-              <>
-                Degree days unavailable —{" "}
-                <button
-                  type="button"
-                  className="link-btn"
-                  onClick={() => setProfileOpen(true)}
-                >
-                  set season start
-                </button>
-              </>
-            ) : (
-              <>
-                {cumulativeGdd != null
-                  ? `${cumulativeGdd.toFixed(0)} °C·d`
-                  : "—"}{" "}
-                · {gddDaysElapsed}d since season start
-                {gddDaysExcluded > 0
-                  ? ` · ${gddDaysExcluded}d excluded (sparse)`
-                  : ""}
-                <span className="dashboard-gdd-note" title="Indoor degree days under artificial light are not comparable to field GDD / Winkler.">
-                  {" "}
-                  (device degree days)
-                </span>
-              </>
-            )}
-          </p>
+          <DashboardStatusSentence
+            sentence={statusSentence}
+            detail={seasonDetail}
+            gddProvisional={gddProvisional && cumulativeGdd != null}
+          />
         </div>
         <SystemStatusLine
           sidecarReachable={sidecarReachable}
@@ -714,70 +753,79 @@ export function Dashboard({
         </button>
       </div>
 
-      {fetching && <div className="fetch-progress" aria-hidden="true" />}
+      {fetching && !reading ? (
+        <div
+          className="dashboard-skeleton"
+          aria-busy="true"
+          aria-label="Loading readings"
+        >
+          <div className="skeleton dashboard-skeleton-horizon" />
+          <div className="sensor-tile-grid" aria-hidden="true">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="skeleton dashboard-skeleton-tile" />
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {latestError && !reading && (
         <div className="error-banner">{latestError}</div>
       )}
 
-      <div className={fetching ? "dashboard-content is-fetching" : "dashboard-content"}>
-        <section className="metrics-primary" aria-label="Primary metrics">
-          {primary.map((metric) => {
-            const value = valueFor(metric.key);
-            const score = scoreForCard(
-              metric.key,
-              value,
-              cropType,
-              lifecycleStage,
-              reading?.recorded_at,
-              timeZone,
-              metric.derived,
-            );
-            return (
-              <div key={metric.key} className="primary-metric-wrap">
-                <PrimaryMetricCard
-                  metric={metric}
-                  value={value}
-                  score={score}
-                  sparkValues={sparkFor(metric.key)}
-                  scoringSemantic={semantic}
-                  fetching={fetching}
-                  rangeError={rangeError}
-                  onRetryRange={() => void refreshRange()}
-                  onOpen={() => openMetric(metric.key)}
-                />
-                {metric.key === "moisture_pct" && drydownLine && (
-                  <p className="drydown-line muted">{drydownLine}</p>
-                )}
-              </div>
-            );
-          })}
-        </section>
+      <div
+        className={[
+          "dashboard-content",
+          fetching ? "is-fetching" : "",
+          enterActive && !reduceMotion ? "is-entering" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
+        <WeatherHorizon
+          forecast={weatherForecast}
+          loading={weatherLoading}
+          error={weatherError}
+          insideTempC={reading?.ambient_temp_c ?? null}
+          advisoryDigest={advisoryDigest}
+          advisoryComputedAt={advisoryComputedAt}
+          timeZone={timeZone}
+          onRetry={() => void refreshWeather()}
+        />
 
-        <section className="metrics-context" aria-label="Context metrics">
-          {context.map((metric) => {
-            const value = valueFor(metric.key);
-            const score = scoreForCard(
-              metric.key,
-              value,
-              cropType,
-              lifecycleStage,
-              reading?.recorded_at,
-              timeZone,
-              metric.derived,
-            );
-            return (
-              <ContextMetricCard
-                key={metric.key}
+        <NeedsAttention
+          items={needsAttention}
+          onSelectMetric={(key) => openMetric(key as MetricKey)}
+        />
+
+        <section className="sensor-tile-grid" aria-label="Sensor tiles">
+          {scoredTiles.map(({ metric, value, score }) => (
+            <div key={metric.key} className="sensor-tile-wrap">
+              <SensorTile
                 metric={metric}
                 value={value}
                 score={score}
+                sparkValues={sparkFor(metric.key)}
+                scoringSemantic={semantic}
+                recordedAt={reading?.recorded_at ?? null}
+                nowMs={nowMs}
+                staleAfterMs={staleAfterMs}
                 fetching={fetching}
+                rangeError={rangeError}
+                onRetryRange={() => void refreshRange()}
                 onOpen={() => openMetric(metric.key)}
-                trendText={metric.derived ? trendFor(metric.key) : null}
+                simulated={metricIsSimulated(metric.key, sensorModes)}
+                footnote={
+                  metric.key === "moisture_pct" && drydownLine
+                    ? drydownLine
+                    : metric.derived && metric.key === "vpd_kpa"
+                      ? VPD_LIMITATION
+                      : metric.derived
+                        ? "Derived from greenhouse air"
+                        : null
+                }
               />
-            );
-          })}
+            </div>
+          ))}
         </section>
 
         <section className="recent-events" aria-label="Recent events">
@@ -824,7 +872,9 @@ export function Dashboard({
       </div>
 
       <footer className="dashboard-footer">
-        <span>6h sparklines · polls every 30s · Enter or click a card for detail</span>
+        <span>
+          24h sparklines · polls every 30s · Enter or click a tile for detail
+        </span>
         <button
           type="button"
           className="refresh-btn"
@@ -864,10 +914,20 @@ export function Dashboard({
               cropType={cropType}
               lifecycleStage={lifecycleStage}
               seasonStartDate={seasonStartDate}
-              onProfileSaved={(nextCrop, nextStage, nextSeason) => {
+              soilTexture={soilTexture}
+              cultivar={cultivar}
+              onProfileSaved={(
+                nextCrop: string,
+                nextStage: string,
+                nextSeason?: string | null,
+                nextTexture?: string | null,
+                nextCultivar?: string | null,
+              ) => {
                 setCropType(nextCrop);
                 setLifecycleStage(nextStage);
                 if (nextSeason !== undefined) setSeasonStartDate(nextSeason);
+                if (nextTexture !== undefined) setSoilTexture(nextTexture);
+                if (nextCultivar !== undefined) setCultivar(nextCultivar);
                 onProfileChanged();
                 setProfileOpen(false);
                 void refresh();
@@ -897,7 +957,7 @@ export function Dashboard({
           deviceLifecycleStage={lifecycleStage}
           eventsEpoch={eventsEpoch}
           onEventsChanged={onEventsChanged}
-          onClose={onCloseMetric}
+          onClose={closeMetric}
         />
       )}
     </div>

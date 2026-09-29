@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  fetchLatestAdvisoryDigest,
   fetchDailyAggregates,
   fetchEvents,
   fetchReadingsRange,
 } from "../data/client";
+import type { DailyAdvisoryDigestResponse } from "../data/types";
 import {
   HISTORY_FETCH_LIMIT,
   type DailyAggregateRow,
@@ -21,11 +23,16 @@ import {
 import {
   DEFAULT_CROP_TYPE,
   DEFAULT_LIFECYCLE_STAGE,
+  TOMATO_GDD_STAGE_BANDS_PROVENANCE,
+  WINKLER_INDEX_NOT_PHENOLOGY_NOTE,
   getCropStage,
+  getGrapeWineCultivarProfile,
+  getGrapeWineGddProvenance,
   getScoringSemantic,
   isGrapeCrop,
   SAMPLING_LIMITATIONS,
 } from "../lib/growingConstants";
+import { formatGrapeWineStageLine, formatTomatoStageLine } from "../lib/phenology";
 import {
   formatMetricValue,
   rangeFromPreset,
@@ -116,12 +123,16 @@ export function Reports({
   );
   const [timeZone, setTimeZone] = useState(DEFAULT_DEVICE_TIMEZONE);
   const [seasonStartDate, setSeasonStartDate] = useState<string | null>(null);
+  const [cultivar, setCultivar] = useState<string | null>(null);
   const [cumulativeGdd, setCumulativeGdd] = useState<number | null>(null);
   const [daysElapsed, setDaysElapsed] = useState<number | null>(null);
   const [daysExcluded, setDaysExcluded] = useState(0);
   const [gddUnavailableReason, setGddUnavailableReason] = useState<
     string | null
   >(null);
+  const [advisories, setAdvisories] =
+    useState<DailyAdvisoryDigestResponse | null>(null);
+  const [advisoriesError, setAdvisoriesError] = useState<string | null>(null);
   const [from, setFrom] = useState(() => rangeFromPreset(preset).from);
   const [to, setTo] = useState(() => rangeFromPreset(preset).to);
   const [loading, setLoading] = useState(true);
@@ -161,6 +172,7 @@ export function Reports({
           );
           setTimeZone(aggregates.timezone ?? DEFAULT_DEVICE_TIMEZONE);
           setSeasonStartDate(aggregates.season_start_date);
+          setCultivar(aggregates.cultivar ?? null);
           setCumulativeGdd(aggregates.cumulative_gdd);
           setDaysElapsed(aggregates.days_elapsed);
           setDaysExcluded(aggregates.days_excluded);
@@ -186,6 +198,30 @@ export function Reports({
       cancelled = true;
     };
   }, [preset, profileEpoch, eventsEpoch, deviceName]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadAdvisories() {
+      try {
+        const result = await fetchLatestAdvisoryDigest(deviceName);
+        if (!cancelled) {
+          setAdvisories(result);
+          setAdvisoriesError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setAdvisories(null);
+          setAdvisoriesError(
+            err instanceof Error ? err.message : "Advisories unavailable",
+          );
+        }
+      }
+    }
+    void loadAdvisories();
+    return () => {
+      cancelled = true;
+    };
+  }, [deviceName, profileEpoch]);
 
   const metricSummaries = useMemo(
     () =>
@@ -215,6 +251,9 @@ export function Reports({
   const scoringSemantic = getScoringSemantic(cropType, lifecycleStage);
   const stage = getCropStage(cropType, lifecycleStage);
   const showGrapeLimitations = isGrapeCrop(cropType);
+  const cultivarProfile = getGrapeWineCultivarProfile(
+    cropType === "grape_wine" ? cultivar : null,
+  );
 
   const sortedDays = useMemo(
     () => [...dailyRows].sort((a, b) => b.day.localeCompare(a.day)),
@@ -250,6 +289,47 @@ export function Reports({
       {error && <div className="error-banner">{error}</div>}
       {loading && <p className="view-status">Loading…</p>}
 
+      {advisories?.digest && (
+        <section className="reports-advisories">
+          <h2>Weather advisories</h2>
+          <p className="muted">
+            Last computed{" "}
+            {advisories.computed_at
+              ? new Date(advisories.computed_at).toLocaleString("en-GB")
+              : new Date(advisories.digest.evaluated_at).toLocaleString("en-GB")}
+          </p>
+          <ul>
+            <li>{advisories.digest.spray_window.message}</li>
+            <li>{advisories.digest.capture_suggestion.note}</li>
+            {cropType === "tomato" && advisories.digest.tomato && (
+              <>
+                <li>
+                  {(advisories.digest.tomato.chill as { message?: string })?.message ??
+                    "Chill assessment unavailable"}
+                </li>
+                <li>
+                  {(advisories.digest.tomato.moisture as { headline?: string })
+                    ?.headline ?? "Moisture stability unavailable"}
+                </li>
+              </>
+            )}
+          </ul>
+        </section>
+      )}
+      {!loading && !advisories?.digest && !advisoriesError && (
+        <section className="reports-advisories">
+          <h2>Weather advisories</h2>
+          <p className="muted">
+            Advisories sync has not run yet. Invoke the{" "}
+            <code>advisories-daily-sync</code> Edge Function to populate
+            precomputed weather advisories.
+          </p>
+        </section>
+      )}
+      {advisoriesError && !advisories && (
+        <p className="muted view-status">{advisoriesError}</p>
+      )}
+
       {!loading && sortedDays.length > 0 && (
         <section className="reports-season-summary">
           <h2>Season summary</h2>
@@ -263,6 +343,34 @@ export function Reports({
                 ) : cumulativeGdd != null ? (
                   <>
                     {cumulativeGdd.toFixed(1)} °C·d
+                    {cropType === "grape_wine" ? (
+                      <>
+                        {" "}
+                        · current stage:{" "}
+                        {formatGrapeWineStageLine(cumulativeGdd, cultivar)}
+                        <span
+                          className="dashboard-gdd-note"
+                          title={getGrapeWineGddProvenance(cultivar)}
+                        >
+                          {" "}
+                          ({getGrapeWineGddProvenance(cultivar)})
+                        </span>
+                      </>
+                    ) : null}
+                    {cropType === "tomato" ? (
+                      <>
+                        {" "}
+                        · GDD-inferred stage:{" "}
+                        {formatTomatoStageLine(cumulativeGdd)}
+                        <span
+                          className="dashboard-gdd-note"
+                          title={TOMATO_GDD_STAGE_BANDS_PROVENANCE}
+                        >
+                          {" "}
+                          ({TOMATO_GDD_STAGE_BANDS_PROVENANCE})
+                        </span>
+                      </>
+                    ) : null}
                     <span className="dashboard-gdd-note">
                       {" "}
                       (device degree days — not field GDD)
@@ -281,6 +389,69 @@ export function Reports({
                   : "n/a"}
               </dd>
             </div>
+            {cropType === "grape_wine" ? (
+              <>
+                <div>
+                  <dt>Cultivar</dt>
+                  <dd>
+                    {cultivarProfile
+                      ? cultivarProfile.display_name
+                      : "Not set (shared GDD bands)"}
+                  </dd>
+                </div>
+                {cultivarProfile ? (
+                  <>
+                    <div>
+                      <dt>Winkler region</dt>
+                      <dd>
+                        {cultivarProfile.winkler_region_label}
+                        <span
+                          className="dashboard-gdd-note"
+                          title={WINKLER_INDEX_NOT_PHENOLOGY_NOTE}
+                        >
+                          {" "}
+                          (site-suitability context; not phenology GDD)
+                        </span>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Water-stress reference</dt>
+                      <dd>
+                        {cultivarProfile.water_stress.metric_type ===
+                        "leaf_water_potential_gs50" &&
+                        cultivarProfile.water_stress.psi_mpa != null ? (
+                          <>
+                            Psi_gs50 = {cultivarProfile.water_stress.psi_mpa} ±{" "}
+                            {cultivarProfile.water_stress.psi_mpa_plus_minus}{" "}
+                            {cultivarProfile.water_stress.units} (
+                            {cultivarProfile.water_stress.metric_type}).{" "}
+                            {cultivarProfile.water_stress.note}
+                          </>
+                        ) : null}
+                        {cultivarProfile.water_stress.metric_type ===
+                        "stem_water_potential" &&
+                        cultivarProfile.water_stress.stages ? (
+                          <>
+                            Psi_stem stage table ({cultivarProfile.water_stress.metric_type}
+                            ):{" "}
+                            {cultivarProfile.water_stress.stages
+                              .map(
+                                (row) =>
+                                  `${row.phenological_stage} ${row.psi_stem_mpa} MPa`,
+                              )
+                              .join("; ")}
+                            . {cultivarProfile.water_stress.note}
+                          </>
+                        ) : null}
+                        {cultivarProfile.water_stress.open_gap
+                          ? cultivarProfile.water_stress.note
+                          : null}
+                      </dd>
+                    </div>
+                  </>
+                ) : null}
+              </>
+            ) : null}
             <div>
               <dt>Irrigation</dt>
               <dd>
@@ -486,7 +657,8 @@ export function Reports({
           Bounds from <code>ml-backend/constants.py</code>{" "}
           <code>CROP_PROFILES</code> (mirrored in{" "}
           <code>shared/src/lib/growingConstants.ts</code>). Profile: {cropType}/
-          {lifecycleStage}. Metrics without a band for this profile show raw
+          {lifecycleStage}
+          {cultivarProfile ? `/${cultivarProfile.display_name}` : ""}. Metrics without a band for this profile show raw
           values only. Ambient uses day (06:00-18:00) and night ranges
           separately when the stage defines them. N/P/K estimates are shown
           without pass/fail until calibrated against soil-test ground truth.

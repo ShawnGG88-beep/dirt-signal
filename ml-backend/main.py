@@ -9,11 +9,13 @@ from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from alerts.engine import start_alert_engine, stop_alert_engine
+from routes.advisories import router as advisories_router
 from routes.alerts import router as alerts_router
 from routes.devices import router as devices_router
 from routes.events import router as events_router
 from routes.readings import router as readings_router
 from routes.soil_tests import router as soil_tests_router
+from routes.weather import router as weather_router
 
 
 @asynccontextmanager
@@ -50,6 +52,8 @@ app.include_router(events_router)
 app.include_router(readings_router)
 app.include_router(soil_tests_router)
 app.include_router(alerts_router)
+app.include_router(advisories_router)
+app.include_router(weather_router)
 
 # Collector cadence: devices.collector_interval_seconds is the source of
 # truth (migration 009) so desktop and web derive staleness from the same

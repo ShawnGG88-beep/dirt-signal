@@ -15,8 +15,8 @@ from models import (
     ReadingsRangeResponse,
     SensorReading,
 )
-from constants import get_gdd_base_c
-from derived import cumulative_gdd as sum_cumulative_gdd
+from constants import get_gdd_base_c, should_accumulate_gdd
+from derived import CumulativeGdd, cumulative_gdd as sum_cumulative_gdd
 
 router = APIRouter(prefix="/readings", tags=["readings"])
 
@@ -34,6 +34,15 @@ def _device_profile_fields(device: dict) -> dict:
         "device_id": device["id"],
         "timezone": device["timezone"],
         "season_start_date": device.get("season_start_date"),
+        "soil_texture": device.get("soil_texture"),
+        "cultivar": device.get("cultivar"),
+        "soil_field_capacity_raw": device.get("soil_field_capacity_raw"),
+        "soil_refill_point_raw": device.get("soil_refill_point_raw"),
+        "moisture_mode": device.get("moisture_mode"),
+        "ph_mode": device.get("ph_mode"),
+        "ds18b20_mode": device.get("ds18b20_mode"),
+        "dht22_mode": device.get("dht22_mode"),
+        "npk_mode": device.get("npk_mode"),
     }
 
 
@@ -178,15 +187,26 @@ def get_daily_aggregates(
             )
         )
 
-    cum = sum_cumulative_gdd(
-        [(d.day, d.gdd_day, d.incomplete) for d in days],
-        season_start_date=device.get("season_start_date"),
-    )
+    if not should_accumulate_gdd(
+        str(device.get("crop_type") or ""),
+        str(device.get("lifecycle_stage") or ""),
+    ):
+        if not device.get("season_start_date"):
+            cum = CumulativeGdd(None, None, 0, "no_season_start")
+        else:
+            cum = CumulativeGdd(0.0, 0, 0, None)
+    else:
+        cum = sum_cumulative_gdd(
+            [(d.day, d.gdd_day, d.incomplete) for d in days],
+            season_start_date=device.get("season_start_date"),
+        )
     return DailyAggregatesResponse(
         device_name=device_name,
         device_id=str(device["id"]),
         timezone=str(device["timezone"]),
         season_start_date=device.get("season_start_date"),
+        soil_texture=device.get("soil_texture"),
+        cultivar=device.get("cultivar"),
         crop_type=str(device["crop_type"]),
         lifecycle_stage=str(device["lifecycle_stage"]),
         gdd_base_c=gdd_base,

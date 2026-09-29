@@ -14,8 +14,11 @@ import {
   CROP_PROFILES,
   DEFAULT_DEVICE_TIMEZONE,
   getGddBaseC,
+  grapeWineCultivarOptions,
+  isValidGrapeWineCultivar,
   getSelectedDeviceName,
   isPlantEventTypeKey,
+  shouldAccumulateGdd,
   type AlertEvent,
   type AlertEventsListResponse,
   type AlertRule,
@@ -24,6 +27,8 @@ import {
   type AlertsQuery,
   type DailyAggregateRow,
   type DailyAggregatesResponse,
+  type DailyAdvisoryDigestResponse,
+  type DailyAdvisoryDigestPayload,
   type DataClient,
   type DeviceProfileOptionsResponse,
   type DeviceProfilePatch,
@@ -38,6 +43,9 @@ import {
   type ProfileCropOption,
   type ReadingsRangeResponse,
   type SensorReading,
+  type WeatherForecastDay,
+  type WeatherForecastHour,
+  type WeatherForecastResponse,
 } from "@dirt-signal/shared";
 import { recordSuccessfulFetch } from "./freshness";
 import { supabase } from "./supabaseClient";
@@ -52,10 +60,34 @@ interface DeviceRecord {
   timezone: string;
   season_start_date: string | null;
   collector_interval_seconds: number | null;
+  soil_texture: string | null;
+  cultivar: string | null;
+  soil_field_capacity_raw: number | null;
+  soil_refill_point_raw: number | null;
+  moisture_mode: string | null;
+  ph_mode: string | null;
+  ds18b20_mode: string | null;
+  dht22_mode: string | null;
+  npk_mode: string | null;
 }
 
 function failed(error: { message: string } | null, context: string): Error {
   return new Error(error?.message ?? context);
+}
+
+function optionalPct(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function optionalMode(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const mode = value.trim().toLowerCase();
+  return mode === "mock" || mode === "real" ? mode : null;
 }
 
 /** Mirror of ml-backend db._device_from_row normalisation. */
@@ -76,6 +108,16 @@ function deviceFromRow(row: Record<string, unknown>): DeviceRecord {
     timezone: tz || DEFAULT_DEVICE_TIMEZONE,
     season_start_date: season ? String(season).slice(0, 10) : null,
     collector_interval_seconds: interval,
+    soil_texture:
+      typeof row.soil_texture === "string" ? row.soil_texture : null,
+    cultivar: typeof row.cultivar === "string" ? row.cultivar : null,
+    soil_field_capacity_raw: optionalPct(row.soil_field_capacity_raw),
+    soil_refill_point_raw: optionalPct(row.soil_refill_point_raw),
+    moisture_mode: optionalMode(row.moisture_mode),
+    ph_mode: optionalMode(row.ph_mode),
+    ds18b20_mode: optionalMode(row.ds18b20_mode),
+    dht22_mode: optionalMode(row.dht22_mode),
+    npk_mode: optionalMode(row.npk_mode),
   };
 }
 
@@ -110,6 +152,15 @@ function deviceProfileFields(device: DeviceRecord) {
     device_id: device.id,
     timezone: device.timezone,
     season_start_date: device.season_start_date,
+    soil_texture: device.soil_texture,
+    cultivar: device.cultivar,
+    soil_field_capacity_raw: device.soil_field_capacity_raw,
+    soil_refill_point_raw: device.soil_refill_point_raw,
+    moisture_mode: device.moisture_mode,
+    ph_mode: device.ph_mode,
+    ds18b20_mode: device.ds18b20_mode,
+    dht22_mode: device.dht22_mode,
+    npk_mode: device.npk_mode,
   };
 }
 
@@ -310,20 +361,35 @@ async function fetchDailyAggregates(
     }),
   );
 
-  const cum = cumulativeGdd(
-    days.map((d) => ({
-      day: d.day,
-      gdd_day: d.gdd_day,
-      incomplete: d.incomplete,
-    })),
-    device.season_start_date,
-  );
+  const cum = shouldAccumulateGdd(device.crop_type, device.lifecycle_stage)
+    ? cumulativeGdd(
+        days.map((d) => ({
+          day: d.day,
+          gdd_day: d.gdd_day,
+          incomplete: d.incomplete,
+        })),
+        device.season_start_date,
+      )
+    : device.season_start_date
+      ? {
+          cumulative_gdd: 0,
+          days_elapsed: 0,
+          days_excluded: 0,
+          unavailable_reason: null,
+        }
+      : {
+          cumulative_gdd: null,
+          days_elapsed: null,
+          days_excluded: 0,
+          unavailable_reason: "no_season_start" as const,
+        };
 
   return {
     device_name: deviceName,
     device_id: device.id,
     timezone: device.timezone,
     season_start_date: device.season_start_date,
+    cultivar: device.cultivar,
     crop_type: device.crop_type,
     lifecycle_stage: device.lifecycle_stage,
     gdd_base_c: gddBase,
@@ -356,6 +422,8 @@ async function fetchProfileOptions(
         lifecycle_stage: stageKey,
         display_name: stageDisplayName(stageKey),
       })),
+      cultivars:
+        cropType === "grape_wine" ? grapeWineCultivarOptions() : [],
     }),
   );
   return { crops };
@@ -433,6 +501,85 @@ async function patchDeviceProfile(
     patch.season_start_date = raw;
   }
 
+  if (body.soil_texture !== undefined) {
+    const texture = body.soil_texture?.trim().toLowerCase() || "";
+    if (texture === "") {
+      patch.soil_texture = null;
+    } else if (!["sand", "sandy_loam", "loam", "clay"].includes(texture)) {
+      throw new Error(
+        "soil_texture must be one of: sand, sandy_loam, loam, clay",
+      );
+    } else {
+      patch.soil_texture = texture;
+    }
+  }
+
+  if (body.cultivar !== undefined) {
+    const rawCultivar = body.cultivar?.trim().toLowerCase() || "";
+    if (rawCultivar === "") {
+      patch.cultivar = null;
+    } else if (!isValidGrapeWineCultivar(rawCultivar)) {
+      const valid = grapeWineCultivarOptions()
+        .map((entry) => entry.cultivar)
+        .join(", ");
+      throw new Error(
+        `Unknown cultivar '${body.cultivar}'. Valid values: ${valid}.`,
+      );
+    } else if (newCrop !== "grape_wine") {
+      throw new Error("cultivar is only valid when crop_type is grape_wine");
+    } else {
+      patch.cultivar = rawCultivar;
+    }
+  }
+
+  if (
+    newCrop !== "grape_wine" &&
+    (body.crop_type !== undefined || body.cultivar !== undefined)
+  ) {
+    patch.cultivar = null;
+  }
+
+  function validateAnchorPct(name: string, value: number | null): number | null {
+    if (value === null) return null;
+    if (!Number.isFinite(value) || value < 0 || value > 100) {
+      throw new Error(
+        `${name} must be between 0 and 100 (HW-390 relative saturation %)`,
+      );
+    }
+    return value;
+  }
+
+  if (body.soil_field_capacity_raw !== undefined) {
+    patch.soil_field_capacity_raw = validateAnchorPct(
+      "soil_field_capacity_raw",
+      body.soil_field_capacity_raw,
+    );
+  }
+  if (body.soil_refill_point_raw !== undefined) {
+    patch.soil_refill_point_raw = validateAnchorPct(
+      "soil_refill_point_raw",
+      body.soil_refill_point_raw,
+    );
+  }
+  if (
+    body.soil_field_capacity_raw !== undefined ||
+    body.soil_refill_point_raw !== undefined
+  ) {
+    const fc =
+      body.soil_field_capacity_raw !== undefined
+        ? body.soil_field_capacity_raw
+        : existing.soil_field_capacity_raw;
+    const rp =
+      body.soil_refill_point_raw !== undefined
+        ? body.soil_refill_point_raw
+        : existing.soil_refill_point_raw;
+    if (fc !== null && rp !== null && fc <= rp) {
+      throw new Error(
+        "soil_field_capacity_raw must be greater than soil_refill_point_raw",
+      );
+    }
+  }
+
   if (Object.keys(patch).length === 0) {
     throw new Error("No fields to update");
   }
@@ -464,6 +611,10 @@ async function patchDeviceProfile(
     lifecycle_stage: device.lifecycle_stage,
     timezone: device.timezone,
     season_start_date: device.season_start_date,
+    soil_texture: device.soil_texture,
+    cultivar: device.cultivar,
+    soil_field_capacity_raw: device.soil_field_capacity_raw,
+    soil_refill_point_raw: device.soil_refill_point_raw,
   };
 }
 
@@ -705,6 +856,142 @@ async function fetchAlertRules(
   return { device_name: deviceName, rules, count: rules.length };
 }
 
+async function fetchLatestAdvisoryDigest(
+  deviceName = getSelectedDeviceName(),
+): Promise<DailyAdvisoryDigestResponse> {
+  const device = await resolveDevice(deviceName);
+  const { data, error } = await supabase
+    .from("device_advisories_daily")
+    .select("digest, computed_at")
+    .eq("device_id", device.id)
+    .order("computed_at", { ascending: false })
+    .limit(1);
+  if (error) throw failed(error, "Failed to load advisory digest");
+  const row = (data ?? [])[0] as
+    | { digest: DailyAdvisoryDigestPayload; computed_at: string }
+    | undefined;
+  if (!row?.digest) {
+    return {
+      device_name: deviceName,
+      computed_at: null,
+      digest: null,
+    };
+  }
+  return {
+    device_name: deviceName,
+    computed_at: String(row.computed_at),
+    digest: row.digest,
+  };
+}
+
+function numOrNull(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function intOrNull(value: unknown): number | null {
+  const n = numOrNull(value);
+  return n == null ? null : Math.round(n);
+}
+
+function mapWeatherHour(row: Record<string, unknown>): WeatherForecastHour {
+  return {
+    forecast_time: String(row.forecast_time ?? ""),
+    fetched_at: String(row.fetched_at ?? ""),
+    temperature_2m: numOrNull(row.temperature_2m),
+    relative_humidity_2m: numOrNull(row.relative_humidity_2m),
+    precipitation: numOrNull(row.precipitation),
+    precipitation_probability: numOrNull(row.precipitation_probability),
+    wind_speed_10m: numOrNull(row.wind_speed_10m),
+    wind_gusts_10m: numOrNull(row.wind_gusts_10m),
+    cloud_cover: numOrNull(row.cloud_cover),
+    weather_code: intOrNull(row.weather_code),
+    cape: numOrNull(row.cape),
+    et0_fao_evapotranspiration: numOrNull(row.et0_fao_evapotranspiration),
+    soil_temperature_0cm: numOrNull(row.soil_temperature_0cm),
+    soil_moisture_0_1cm: numOrNull(row.soil_moisture_0_1cm),
+    source: String(row.source ?? "open-meteo"),
+  };
+}
+
+function mapWeatherDay(row: Record<string, unknown>): WeatherForecastDay {
+  return {
+    forecast_date: String(row.forecast_date ?? "").slice(0, 10),
+    fetched_at: String(row.fetched_at ?? ""),
+    sunrise_at: row.sunrise_at != null ? String(row.sunrise_at) : null,
+    sunset_at: row.sunset_at != null ? String(row.sunset_at) : null,
+    source: String(row.source ?? "open-meteo"),
+  };
+}
+
+async function fetchWeatherForecast(
+  deviceName = getSelectedDeviceName(),
+  horizonHours = 168,
+): Promise<WeatherForecastResponse> {
+  const device = await resolveDevice(deviceName);
+  const now = Date.now();
+  const fromAt = new Date(now - 60 * 60 * 1000).toISOString();
+  const toAt = new Date(now + horizonHours * 3600_000).toISOString();
+  const dailyFrom = new Date(now - 24 * 3600_000).toISOString().slice(0, 10);
+  const dailyTo = new Date(now + 8 * 24 * 3600_000).toISOString().slice(0, 10);
+
+  const [hourlyRes, dailyRes] = await Promise.all([
+    supabase
+      .from("weather_forecast")
+      .select(
+        "forecast_time, fetched_at, temperature_2m, relative_humidity_2m, precipitation, precipitation_probability, wind_speed_10m, wind_gusts_10m, cloud_cover, weather_code, cape, et0_fao_evapotranspiration, soil_temperature_0cm, soil_moisture_0_1cm, source",
+      )
+      .eq("device_id", device.id)
+      .gte("forecast_time", fromAt)
+      .lte("forecast_time", toAt)
+      .order("forecast_time", { ascending: true })
+      .limit(500),
+    supabase
+      .from("weather_forecast_daily")
+      .select("forecast_date, fetched_at, sunrise_at, sunset_at, source")
+      .eq("device_id", device.id)
+      .gte("forecast_date", dailyFrom)
+      .lte("forecast_date", dailyTo)
+      .order("forecast_date", { ascending: true })
+      .limit(16),
+  ]);
+
+  if (hourlyRes.error) {
+    throw failed(hourlyRes.error, "Failed to load weather forecast");
+  }
+  if (dailyRes.error) {
+    throw failed(dailyRes.error, "Failed to load daily sun times");
+  }
+
+  const hours = ((hourlyRes.data ?? []) as Record<string, unknown>[]).map(
+    mapWeatherHour,
+  );
+  const days = ((dailyRes.data ?? []) as Record<string, unknown>[]).map(
+    mapWeatherDay,
+  );
+  const fetchedCandidates = [
+    ...hours.map((h) => h.fetched_at),
+    ...days.map((d) => d.fetched_at),
+  ].filter(Boolean);
+  const fetched_at =
+    fetchedCandidates.length > 0
+      ? fetchedCandidates.reduce((a, b) => (a > b ? a : b))
+      : null;
+
+  return {
+    device_name: deviceName,
+    device_id: device.id,
+    timezone: device.timezone,
+    fetched_at,
+    hours,
+    days,
+  };
+}
+
 async function patchAlertRule(
   ruleId: string,
   body: AlertRulePatch,
@@ -778,4 +1065,6 @@ export const supabaseDataClient: DataClient = {
   markAlertNotified: tracked(markAlertNotified),
   fetchAlertRules: tracked(fetchAlertRules),
   patchAlertRule: tracked(patchAlertRule),
+  fetchLatestAdvisoryDigest: tracked(fetchLatestAdvisoryDigest),
+  fetchWeatherForecast: tracked(fetchWeatherForecast),
 };

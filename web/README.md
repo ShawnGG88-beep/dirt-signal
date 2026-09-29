@@ -85,6 +85,10 @@ Production and Preview):
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 
+Pushes to `main` that change files under `web/` or `shared/` trigger a
+fresh production deployment on Vercel (see `ignoreCommand` in
+`vercel.json` at the repo root).
+
 Nothing else is required for a production build. Supabase needs no
 configuration for the new origin: password sign-in has no OAuth redirect,
 and the Supabase API accepts requests from any origin.

@@ -6,13 +6,11 @@ from typing import Literal
 
 from camera.base import Camera
 from camera.mock import build_mock_camera
-from camera.picamera_capture import (
-    DEFAULT_CAPTURE_HEIGHT,
-    DEFAULT_CAPTURE_WIDTH,
-    PiCameraCapture,
-)
 
 CameraMode = Literal["mock", "real"]
+
+DEFAULT_CAPTURE_WIDTH = 2304
+DEFAULT_CAPTURE_HEIGHT = 1296
 
 
 def build_camera(
@@ -24,4 +22,6 @@ def build_camera(
 ) -> Camera:
     if mode == "mock":
         return build_mock_camera()
+    from camera.picamera_capture import PiCameraCapture
+
     return PiCameraCapture(width=width, height=height, device_id=device_id)

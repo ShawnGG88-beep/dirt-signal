@@ -24,6 +24,9 @@ class SensorReading(BaseModel):
     npk_n_est: int | None = None
     npk_p_est: int | None = None
     npk_k_est: int | None = None
+    npk_moisture_pct: float | None = None
+    npk_temp_c: float | None = None
+    npk_ph: float | None = None
     probe_depth_cm: float | None = None
     # Provenance: profile in effect at insert. NULL on pre-migration rows.
     crop_type_at_reading: str | None = None
@@ -38,6 +41,15 @@ class LatestReadingResponse(BaseModel):
     device_id: str | None = None
     timezone: str = "Africa/Johannesburg"
     season_start_date: str | None = None
+    soil_texture: str | None = None
+    cultivar: str | None = None
+    soil_field_capacity_raw: float | None = None
+    soil_refill_point_raw: float | None = None
+    moisture_mode: str | None = None
+    ph_mode: str | None = None
+    ds18b20_mode: str | None = None
+    dht22_mode: str | None = None
+    npk_mode: str | None = None
 
 
 class ReadingsRangeResponse(BaseModel):
@@ -51,13 +63,26 @@ class ReadingsRangeResponse(BaseModel):
     device_id: str | None = None
     timezone: str = "Africa/Johannesburg"
     season_start_date: str | None = None
+    soil_texture: str | None = None
+    cultivar: str | None = None
+    soil_field_capacity_raw: float | None = None
+    soil_refill_point_raw: float | None = None
+    moisture_mode: str | None = None
+    ph_mode: str | None = None
+    ds18b20_mode: str | None = None
+    dht22_mode: str | None = None
+    npk_mode: str | None = None
 
 
 class DeviceProfileUpdate(BaseModel):
     crop_type: str | None = None
     lifecycle_stage: str | None = None
     season_start_date: str | None = None
+    soil_texture: str | None = None
     clear_season_start: bool = False
+    cultivar: str | None = None
+    soil_field_capacity_raw: float | None = None
+    soil_refill_point_raw: float | None = None
 
 
 class DeviceResponse(BaseModel):
@@ -67,6 +92,15 @@ class DeviceResponse(BaseModel):
     lifecycle_stage: str
     timezone: str = "Africa/Johannesburg"
     season_start_date: str | None = None
+    soil_texture: str | None = None
+    cultivar: str | None = None
+    soil_field_capacity_raw: float | None = None
+    soil_refill_point_raw: float | None = None
+    moisture_mode: str | None = None
+    ph_mode: str | None = None
+    ds18b20_mode: str | None = None
+    dht22_mode: str | None = None
+    npk_mode: str | None = None
 
 
 class DailyAggregateRow(BaseModel):
@@ -105,6 +139,8 @@ class DailyAggregatesResponse(BaseModel):
     device_id: str
     timezone: str
     season_start_date: str | None = None
+    soil_texture: str | None = None
+    cultivar: str | None = None
     crop_type: str
     lifecycle_stage: str
     gdd_base_c: float
@@ -123,10 +159,16 @@ class ProfileStageOption(BaseModel):
     display_name: str
 
 
+class ProfileCultivarOption(BaseModel):
+    cultivar: str
+    display_name: str
+
+
 class ProfileCropOption(BaseModel):
     crop_type: str
     display_name: str
     lifecycle_stages: list[ProfileStageOption] = Field(default_factory=list)
+    cultivars: list[ProfileCultivarOption] = Field(default_factory=list)
 
 
 class DeviceProfileOptionsResponse(BaseModel):
@@ -204,6 +246,11 @@ AlertRuleType = Literal[
     "collector_silence",
     "irrigation_due",
     "disease_pressure",
+    "forecast_chill_risk",
+    "tomato_early_blight",
+    "tomato_late_blight",
+    "tomato_powdery_mildew",
+    "tomato_moisture_cracking",
 ]
 
 
