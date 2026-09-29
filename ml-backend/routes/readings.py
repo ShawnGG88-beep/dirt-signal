@@ -38,6 +38,11 @@ def _device_profile_fields(device: dict) -> dict:
         "cultivar": device.get("cultivar"),
         "soil_field_capacity_raw": device.get("soil_field_capacity_raw"),
         "soil_refill_point_raw": device.get("soil_refill_point_raw"),
+        "moisture_mode": device.get("moisture_mode"),
+        "ph_mode": device.get("ph_mode"),
+        "ds18b20_mode": device.get("ds18b20_mode"),
+        "dht22_mode": device.get("dht22_mode"),
+        "npk_mode": device.get("npk_mode"),
     }
 
 

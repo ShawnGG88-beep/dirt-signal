@@ -31,7 +31,16 @@ export interface SensorReading {
   lifecycle_stage_at_reading?: string | null;
 }
 
-export interface LatestReadingResponse {
+/** Collector config.yaml mock|real flags, mirrored onto devices. */
+export interface DeviceSensorModeFields {
+  moisture_mode?: string | null;
+  ph_mode?: string | null;
+  ds18b20_mode?: string | null;
+  dht22_mode?: string | null;
+  npk_mode?: string | null;
+}
+
+export interface LatestReadingResponse extends DeviceSensorModeFields {
   device_name: string;
   reading: SensorReading | null;
   crop_type?: string;
@@ -47,7 +56,7 @@ export interface LatestReadingResponse {
   soil_refill_point_raw?: number | null;
 }
 
-export interface ReadingsRangeResponse {
+export interface ReadingsRangeResponse extends DeviceSensorModeFields {
   device_name: string;
   from_at: string;
   to_at: string;
@@ -64,7 +73,7 @@ export interface ReadingsRangeResponse {
   soil_refill_point_raw?: number | null;
 }
 
-export interface DeviceResponse {
+export interface DeviceResponse extends DeviceSensorModeFields {
   id: string;
   name: string;
   crop_type: string;
@@ -316,4 +325,42 @@ export interface DailyAdvisoryDigestPayload {
 export interface DailyAdvisoryDigestResponseLegacy {
   device_name: string;
   digest: DailyAdvisoryDigestPayload;
+}
+
+/** One hourly row from weather_forecast (Open-Meteo / mock). */
+export interface WeatherForecastHour {
+  forecast_time: string;
+  fetched_at: string;
+  temperature_2m: number | null;
+  relative_humidity_2m: number | null;
+  precipitation: number | null;
+  precipitation_probability: number | null;
+  wind_speed_10m: number | null;
+  wind_gusts_10m: number | null;
+  cloud_cover: number | null;
+  weather_code: number | null;
+  cape: number | null;
+  et0_fao_evapotranspiration: number | null;
+  soil_temperature_0cm: number | null;
+  soil_moisture_0_1cm: number | null;
+  source: "open-meteo" | "mock" | string;
+}
+
+/** One daily row from weather_forecast_daily (sunrise/sunset UTC). */
+export interface WeatherForecastDay {
+  forecast_date: string;
+  fetched_at: string;
+  sunrise_at: string | null;
+  sunset_at: string | null;
+  source: "open-meteo" | "mock" | string;
+}
+
+export interface WeatherForecastResponse {
+  device_name: string;
+  device_id: string | null;
+  timezone: string;
+  /** Max fetched_at across returned rows; null if empty. */
+  fetched_at: string | null;
+  hours: WeatherForecastHour[];
+  days: WeatherForecastDay[];
 }

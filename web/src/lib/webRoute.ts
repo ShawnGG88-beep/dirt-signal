@@ -20,6 +20,7 @@ export type WebNavView =
   | "history"
   | "reports"
   | "alerts"
+  | "design"
   | "soil-tests"
   | "observations";
 

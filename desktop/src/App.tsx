@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alerts, Dashboard, History, Reports } from "@dirt-signal/shared";
+import {
+  Alerts,
+  Dashboard,
+  DesignSystem,
+  History,
+  Reports,
+} from "@dirt-signal/shared";
 import { ThemeToggle } from "@dirt-signal/shared";
+import {
+  ReduceMotionToggle,
+  ReduceTransparencyToggle,
+} from "@dirt-signal/shared";
 import {
   formatHash,
   navViewFromRoute,
@@ -17,6 +27,7 @@ const NAV: { id: AppView; label: string }[] = [
   { id: "history", label: "History" },
   { id: "reports", label: "Reports" },
   { id: "alerts", label: "Alerts" },
+  { id: "design", label: "Design" },
 ];
 
 function readRoute(): AppRoute {
@@ -59,6 +70,7 @@ function App() {
 
   return (
     <AlertPollProvider>
+      <div className="sky-backdrop" aria-hidden="true" />
       <main className="app">
         <nav className="app-nav" aria-label="Main">
           {NAV.map((item) => (
@@ -82,6 +94,8 @@ function App() {
                     view: "reports",
                     range: route.view === "reports" ? route.range : "30d",
                   });
+                } else if (item.id === "design") {
+                  go({ view: "design" });
                 } else {
                   go({ view: "alerts" });
                 }
@@ -90,6 +104,9 @@ function App() {
               {item.label}
             </button>
           ))}
+          <span className="app-nav-spacer" />
+          <ReduceTransparencyToggle />
+          <ReduceMotionToggle />
           <ThemeToggle />
         </nav>
 
@@ -136,6 +153,7 @@ function App() {
           />
         )}
         {route.view === "alerts" && <Alerts />}
+        {route.view === "design" && <DesignSystem />}
       </main>
     </AlertPollProvider>
   );

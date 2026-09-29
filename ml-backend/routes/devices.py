@@ -106,6 +106,11 @@ def _device_response(row: dict) -> DeviceResponse:
         cultivar=row.get("cultivar"),
         soil_field_capacity_raw=row.get("soil_field_capacity_raw"),
         soil_refill_point_raw=row.get("soil_refill_point_raw"),
+        moisture_mode=row.get("moisture_mode"),
+        ph_mode=row.get("ph_mode"),
+        ds18b20_mode=row.get("ds18b20_mode"),
+        dht22_mode=row.get("dht22_mode"),
+        npk_mode=row.get("npk_mode"),
     )
 
 

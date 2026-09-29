@@ -1,6 +1,12 @@
 import { useEffect, useId, useState } from "react";
 import { getDataSourceLabel } from "../data/client";
 import { DEFAULT_STALE_AFTER_MS } from "../data/types";
+import {
+  formatDeviceDateTime,
+  formatRelativeAge,
+} from "../lib/formatTime";
+
+export { formatRelativeAge } from "../lib/formatTime";
 
 export type SystemHealthState = "live" | "degraded" | "offline";
 
@@ -36,27 +42,7 @@ const STATE_LABEL: Record<SystemHealthState, string> = {
 };
 
 function formatAbsolute(iso: string): string {
-  return new Date(iso).toLocaleString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-}
-
-/** Compact relative age that ticks with `nowMs`. */
-export function formatRelativeAge(thenMs: number, nowMs: number): string {
-  const delta = Math.max(0, nowMs - thenMs);
-  const sec = Math.floor(delta / 1000);
-  if (sec < 60) return `${sec}s`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m`;
-  const hr = Math.floor(min / 60);
-  if (hr < 48) return `${hr}h`;
-  const days = Math.floor(hr / 24);
-  return `${days}d`;
+  return formatDeviceDateTime(iso);
 }
 
 /**

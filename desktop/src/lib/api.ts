@@ -23,6 +23,7 @@ import type {
   PlantEventUpdate,
   PlantEventsListResponse,
   ReadingsRangeResponse,
+  WeatherForecastResponse,
 } from "@dirt-signal/shared";
 
 // Re-export so desktop-internal imports of "../lib/api" keep working.
@@ -325,6 +326,15 @@ export async function fetchDailyAdvisories(
   };
 }
 
+export async function fetchWeatherForecast(
+  deviceName = "pi-garden-01",
+  horizonHours = 168,
+): Promise<WeatherForecastResponse> {
+  return apiFetch<WeatherForecastResponse>(
+    `/weather/forecast?device_name=${encodeURIComponent(deviceName)}&horizon_hours=${horizonHours}`,
+  );
+}
+
 /** Sidecar implementation of the shared data-client seam. */
 export const sidecarDataClient: DataClient = {
   sourceLabel: "sidecar (127.0.0.1:8731)",
@@ -346,4 +356,5 @@ export const sidecarDataClient: DataClient = {
   evaluateAlerts,
   fetchLatestAdvisoryDigest,
   fetchDailyAdvisories,
+  fetchWeatherForecast,
 };

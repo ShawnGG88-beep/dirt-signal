@@ -26,6 +26,7 @@ import type {
   PlantEventUpdate,
   PlantEventsListResponse,
   ReadingsRangeResponse,
+  WeatherForecastResponse,
 } from "./types";
 
 export interface EventsQuery {
@@ -113,6 +114,14 @@ export interface DataClient {
   fetchLatestAdvisoryDigest(
     deviceName?: string,
   ): Promise<DailyAdvisoryDigestResponse>;
+  /**
+   * Hourly + daily Open-Meteo forecast for the weather horizon.
+   * @param horizonHours how many hours ahead to include (default 168).
+   */
+  fetchWeatherForecast(
+    deviceName?: string,
+    horizonHours?: number,
+  ): Promise<WeatherForecastResponse>;
 }
 
 let activeClient: DataClient | null = null;
@@ -262,4 +271,11 @@ export function fetchDailyAdvisories(
     );
   }
   return client.fetchDailyAdvisories(deviceName);
+}
+
+export function fetchWeatherForecast(
+  deviceName?: string,
+  horizonHours?: number,
+): Promise<WeatherForecastResponse> {
+  return getDataClient().fetchWeatherForecast(deviceName, horizonHours);
 }

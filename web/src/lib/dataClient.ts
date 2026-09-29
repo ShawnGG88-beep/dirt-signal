@@ -43,6 +43,9 @@ import {
   type ProfileCropOption,
   type ReadingsRangeResponse,
   type SensorReading,
+  type WeatherForecastDay,
+  type WeatherForecastHour,
+  type WeatherForecastResponse,
 } from "@dirt-signal/shared";
 import { recordSuccessfulFetch } from "./freshness";
 import { supabase } from "./supabaseClient";
@@ -61,6 +64,11 @@ interface DeviceRecord {
   cultivar: string | null;
   soil_field_capacity_raw: number | null;
   soil_refill_point_raw: number | null;
+  moisture_mode: string | null;
+  ph_mode: string | null;
+  ds18b20_mode: string | null;
+  dht22_mode: string | null;
+  npk_mode: string | null;
 }
 
 function failed(error: { message: string } | null, context: string): Error {
@@ -74,6 +82,12 @@ function optionalPct(value: unknown): number | null {
     if (Number.isFinite(parsed)) return parsed;
   }
   return null;
+}
+
+function optionalMode(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const mode = value.trim().toLowerCase();
+  return mode === "mock" || mode === "real" ? mode : null;
 }
 
 /** Mirror of ml-backend db._device_from_row normalisation. */
@@ -99,6 +113,11 @@ function deviceFromRow(row: Record<string, unknown>): DeviceRecord {
     cultivar: typeof row.cultivar === "string" ? row.cultivar : null,
     soil_field_capacity_raw: optionalPct(row.soil_field_capacity_raw),
     soil_refill_point_raw: optionalPct(row.soil_refill_point_raw),
+    moisture_mode: optionalMode(row.moisture_mode),
+    ph_mode: optionalMode(row.ph_mode),
+    ds18b20_mode: optionalMode(row.ds18b20_mode),
+    dht22_mode: optionalMode(row.dht22_mode),
+    npk_mode: optionalMode(row.npk_mode),
   };
 }
 
@@ -137,6 +156,11 @@ function deviceProfileFields(device: DeviceRecord) {
     cultivar: device.cultivar,
     soil_field_capacity_raw: device.soil_field_capacity_raw,
     soil_refill_point_raw: device.soil_refill_point_raw,
+    moisture_mode: device.moisture_mode,
+    ph_mode: device.ph_mode,
+    ds18b20_mode: device.ds18b20_mode,
+    dht22_mode: device.dht22_mode,
+    npk_mode: device.npk_mode,
   };
 }
 
@@ -860,6 +884,114 @@ async function fetchLatestAdvisoryDigest(
   };
 }
 
+function numOrNull(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function intOrNull(value: unknown): number | null {
+  const n = numOrNull(value);
+  return n == null ? null : Math.round(n);
+}
+
+function mapWeatherHour(row: Record<string, unknown>): WeatherForecastHour {
+  return {
+    forecast_time: String(row.forecast_time ?? ""),
+    fetched_at: String(row.fetched_at ?? ""),
+    temperature_2m: numOrNull(row.temperature_2m),
+    relative_humidity_2m: numOrNull(row.relative_humidity_2m),
+    precipitation: numOrNull(row.precipitation),
+    precipitation_probability: numOrNull(row.precipitation_probability),
+    wind_speed_10m: numOrNull(row.wind_speed_10m),
+    wind_gusts_10m: numOrNull(row.wind_gusts_10m),
+    cloud_cover: numOrNull(row.cloud_cover),
+    weather_code: intOrNull(row.weather_code),
+    cape: numOrNull(row.cape),
+    et0_fao_evapotranspiration: numOrNull(row.et0_fao_evapotranspiration),
+    soil_temperature_0cm: numOrNull(row.soil_temperature_0cm),
+    soil_moisture_0_1cm: numOrNull(row.soil_moisture_0_1cm),
+    source: String(row.source ?? "open-meteo"),
+  };
+}
+
+function mapWeatherDay(row: Record<string, unknown>): WeatherForecastDay {
+  return {
+    forecast_date: String(row.forecast_date ?? "").slice(0, 10),
+    fetched_at: String(row.fetched_at ?? ""),
+    sunrise_at: row.sunrise_at != null ? String(row.sunrise_at) : null,
+    sunset_at: row.sunset_at != null ? String(row.sunset_at) : null,
+    source: String(row.source ?? "open-meteo"),
+  };
+}
+
+async function fetchWeatherForecast(
+  deviceName = getSelectedDeviceName(),
+  horizonHours = 168,
+): Promise<WeatherForecastResponse> {
+  const device = await resolveDevice(deviceName);
+  const now = Date.now();
+  const fromAt = new Date(now - 60 * 60 * 1000).toISOString();
+  const toAt = new Date(now + horizonHours * 3600_000).toISOString();
+  const dailyFrom = new Date(now - 24 * 3600_000).toISOString().slice(0, 10);
+  const dailyTo = new Date(now + 8 * 24 * 3600_000).toISOString().slice(0, 10);
+
+  const [hourlyRes, dailyRes] = await Promise.all([
+    supabase
+      .from("weather_forecast")
+      .select(
+        "forecast_time, fetched_at, temperature_2m, relative_humidity_2m, precipitation, precipitation_probability, wind_speed_10m, wind_gusts_10m, cloud_cover, weather_code, cape, et0_fao_evapotranspiration, soil_temperature_0cm, soil_moisture_0_1cm, source",
+      )
+      .eq("device_id", device.id)
+      .gte("forecast_time", fromAt)
+      .lte("forecast_time", toAt)
+      .order("forecast_time", { ascending: true })
+      .limit(500),
+    supabase
+      .from("weather_forecast_daily")
+      .select("forecast_date, fetched_at, sunrise_at, sunset_at, source")
+      .eq("device_id", device.id)
+      .gte("forecast_date", dailyFrom)
+      .lte("forecast_date", dailyTo)
+      .order("forecast_date", { ascending: true })
+      .limit(16),
+  ]);
+
+  if (hourlyRes.error) {
+    throw failed(hourlyRes.error, "Failed to load weather forecast");
+  }
+  if (dailyRes.error) {
+    throw failed(dailyRes.error, "Failed to load daily sun times");
+  }
+
+  const hours = ((hourlyRes.data ?? []) as Record<string, unknown>[]).map(
+    mapWeatherHour,
+  );
+  const days = ((dailyRes.data ?? []) as Record<string, unknown>[]).map(
+    mapWeatherDay,
+  );
+  const fetchedCandidates = [
+    ...hours.map((h) => h.fetched_at),
+    ...days.map((d) => d.fetched_at),
+  ].filter(Boolean);
+  const fetched_at =
+    fetchedCandidates.length > 0
+      ? fetchedCandidates.reduce((a, b) => (a > b ? a : b))
+      : null;
+
+  return {
+    device_name: deviceName,
+    device_id: device.id,
+    timezone: device.timezone,
+    fetched_at,
+    hours,
+    days,
+  };
+}
+
 async function patchAlertRule(
   ruleId: string,
   body: AlertRulePatch,
@@ -934,4 +1066,5 @@ export const supabaseDataClient: DataClient = {
   fetchAlertRules: tracked(fetchAlertRules),
   patchAlertRule: tracked(patchAlertRule),
   fetchLatestAdvisoryDigest: tracked(fetchLatestAdvisoryDigest),
+  fetchWeatherForecast: tracked(fetchWeatherForecast),
 };

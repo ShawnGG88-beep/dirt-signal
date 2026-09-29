@@ -6,13 +6,19 @@ import {
   type RangePreset,
 } from "./metrics";
 
-export type AppView = "dashboard" | "history" | "reports" | "alerts";
+export type AppView =
+  | "dashboard"
+  | "history"
+  | "reports"
+  | "alerts"
+  | "design";
 
 export type AppRoute =
   | { view: "dashboard" }
   | { view: "history"; range: RangePreset }
   | { view: "reports"; range: RangePreset }
   | { view: "alerts" }
+  | { view: "design" }
   | { view: "metric"; key: MetricKey; range: RangePreset };
 
 const DEFAULT_HISTORY_RANGE: RangePreset = "24h";
@@ -68,6 +74,10 @@ export function parseHash(hash: string): AppRoute {
     return { view: "alerts" };
   }
 
+  if (parts[0] === "design") {
+    return { view: "design" };
+  }
+
   if (parts[0] === "metric" && parts[1]) {
     const key = metricKeyFromSlug(parts[1]);
     if (key) {
@@ -87,6 +97,7 @@ export function formatHash(route: AppRoute): string {
   if (route.view === "history") return `#/history?range=${route.range}`;
   if (route.view === "reports") return `#/reports?range=${route.range}`;
   if (route.view === "alerts") return "#/alerts";
+  if (route.view === "design") return "#/design";
   return `#/metric/${METRIC_SLUG[route.key]}?range=${route.range}`;
 }
 

@@ -1,0 +1,49 @@
+{
+  "days_to_commit": {
+    "last_computed_day": "2026-08-20",
+    "today_local": "2026-08-23",
+    "expected": ["2026-08-21", "2026-08-22"]
+  },
+  "dsv_midday": {
+    "accumulated": 10,
+    "threshold": 15,
+    "daily_score": 4,
+    "days_since_reset": 2,
+    "expected_accumulated_after_first": 14,
+    "expected_spray_after_second": true
+  },
+  "forecast_merge": {
+    "now": "2026-08-23T12:00:00.000Z",
+    "tz": "UTC",
+    "readings": [
+      {
+        "recorded_at": "2026-08-21T11:00:00.000Z",
+        "ambient_temp_c": 22,
+        "ambient_humidity_pct": 70
+      }
+    ],
+    "forecast": [
+      {
+        "forecast_time": "2026-08-23T18:00:00.000Z",
+        "temperature_2m": 18,
+        "relative_humidity_2m": 80,
+        "precipitation_probability": 10,
+        "precipitation": 0,
+        "wind_speed_10m": 5,
+        "cloud_cover": 40
+      }
+    ],
+    "days_after_last_observed_must_be": ["forecast", "unavailable"]
+  },
+  "early_blight_observed": {
+    "observed_score": 4,
+    "forecast_score": 0
+  },
+  "chill_forecast": {
+    "base": "2026-07-23T02:00:00.000Z",
+    "lifecycle_stage": "flowering",
+    "hours": 8,
+    "temp_c": 2,
+    "expect_risk": true
+  }
+}

@@ -64,7 +64,21 @@ def _device_from_row(row: dict) -> dict[str, str | int | float | None]:
         "cultivar": row.get("cultivar"),
         "soil_field_capacity_raw": _optional_pct("soil_field_capacity_raw"),
         "soil_refill_point_raw": _optional_pct("soil_refill_point_raw"),
+        "moisture_mode": _optional_mode(row.get("moisture_mode")),
+        "ph_mode": _optional_mode(row.get("ph_mode")),
+        "ds18b20_mode": _optional_mode(row.get("ds18b20_mode")),
+        "dht22_mode": _optional_mode(row.get("dht22_mode")),
+        "npk_mode": _optional_mode(row.get("npk_mode")),
     }
+
+
+def _optional_mode(raw: object) -> str | None:
+    if raw is None:
+        return None
+    value = str(raw).strip().lower()
+    if value in ("mock", "real"):
+        return value
+    return None
 
 
 def resolve_device(device_name: str) -> dict[str, str | int | None]:

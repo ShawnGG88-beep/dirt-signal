@@ -1,0 +1,7 @@
+﻿{
+    "moisture_mode":  "mock",
+    "ph_mode":  "real",
+    "ds18b20_mode":  "real",
+    "dht22_mode":  "real",
+    "npk_mode":  "real"
+}

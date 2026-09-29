@@ -6,6 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./styles/tokens.css": "./src/styles/tokens.css",
+    "./styles/fonts.css": "./src/styles/fonts.css",
+    "./styles/layers.css": "./src/styles/layers.css",
     "./styles/global.css": "./src/styles/global.css"
   },
   "scripts": {
@@ -20,10 +22,15 @@
   "devDependencies": {
     "@types/node": "^22.15.0",
     "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.2.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "recharts": "^3.9.2",
     "typescript": "~5.8.3",
     "vitest": "^3.2.7"
+  },
+  "dependencies": {
+    "@fontsource-variable/recursive": "^5.3.0",
+    "motion": "^12.43.0"
   }
 }

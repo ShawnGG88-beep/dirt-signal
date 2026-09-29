@@ -1,6 +1,14 @@
 # Device registered in Supabase (see devices table)
 device_name: pi-garden-01
 
+# Weather forecast (Open-Meteo via Supabase Edge Function weather-forecast-sync).
+# The Pi does not fetch weather; these values document the operator config.
+# Mirror WEATHER_MODE / WEATHER_LATITUDE / WEATHER_LONGITUDE in Edge Function secrets.
+weather_mode: real   # mock | real
+# Roodepoort greenhouse (approx.). Adjust if the site GPS differs.
+weather_latitude: -26.1625
+weather_longitude: 27.8725
+
 # Per-sensor: mock | real
 ds18b20_mode: real
 dht22_mode: real

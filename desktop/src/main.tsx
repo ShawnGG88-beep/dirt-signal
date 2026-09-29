@@ -2,7 +2,9 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import {
+  initAccessibility,
   initTheme,
+  installPerfProbeGlobal,
   setDataClient,
   setNotificationAdapter,
 } from "@dirt-signal/shared";
@@ -12,6 +14,8 @@ import { tauriNotificationAdapter } from "./lib/notifications";
 setDataClient(sidecarDataClient);
 setNotificationAdapter(tauriNotificationAdapter);
 initTheme();
+initAccessibility();
+installPerfProbeGlobal();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

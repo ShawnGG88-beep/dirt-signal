@@ -1,67 +1,141 @@
 /*
- * Dirt Signal design tokens — the ONLY place hex/rgb colour literals may live
+ * Dirt Signal design tokens. The ONLY place hex/rgb colour literals may live
  * under shared/src, desktop/src or web/src. Every other file must resolve
  * colour through these custom properties (or getToken() for APIs that cannot
  * consume var()).
  *
- * Invariant: `rg '#[0-9a-fA-F]{3,8}' shared/src desktop/src web/src` matches
- * this file alone.
+ * Direction: "Cellar at dusk".
+ * Invariant: rg '#[0-9a-fA-F]{3,8}' shared/src desktop/src web/src matches
+ * this file alone (plus non-src shell meta theme-colour if unavoidable).
  */
 
 :root {
-  /* —— Dark theme (default) — "night soil" —— */
-  --canvas: #14140f;
-  --surface-1: #1e1d17;
-  --surface-2: #262419;
-  --border: #33312a;
-  --border-strong: #4a4739;
+  /* Core palette */
+  --terracotta: #e35336;
+  --apricot: #ffd3ac;
+  --heather: #9988a1;
+  --oxblood: #8a2b0e;
 
-  --text-primary: #edeae0;
-  --text-secondary: #a8a395;
-  --text-disabled: #6b6759;
+  /* Derived */
+  --cellar: #1f1113;
+  --cellar-raised: #3a2426;
+  --parchment: #fff4ea;
+  --heather-text: #b3a5ba;
+  --vine: #a3b58c;
 
-  --status-ok: #7cb363;
-  --status-watch: #d6b24a;
-  --status-warn: #d98b3f;
-  --status-critical: #d2624a;
-  --status-unknown: #8c8779;
-  --accent-info: #5b9bd1;
+  /* Semantic status (colour only; always pair with icon + text in UI) */
+  --status-ok: var(--vine);
+  --status-watch: var(--apricot);
+  --status-act: var(--terracotta);
+  --status-cold: var(--heather);
+  --status-stale: color-mix(in srgb, var(--heather-text) 60%, transparent);
+  --status-warn: var(--terracotta);
+  --status-critical: var(--terracotta);
+  --status-unknown: var(--heather-text);
 
-  --band-in: #7cb363;
-  --band-out: #6e3a2e;
-  --chart-line: #edeae0;
-  --chart-band-fill: rgba(124, 179, 99, 0.14);
-  --focus-ring: #5b9bd1;
+  /* Legacy aliases used by existing views (map onto Cellar) */
+  --canvas: var(--cellar);
+  --surface-1: var(--cellar-raised);
+  --surface-2: color-mix(in srgb, var(--cellar-raised) 85%, var(--oxblood));
+  --border: color-mix(in srgb, var(--apricot) 14%, transparent);
+  --border-strong: color-mix(in srgb, var(--apricot) 28%, transparent);
 
-  /* Scrims / elevation helpers (theme-aware) */
-  --overlay: rgba(20, 20, 15, 0.72);
-  --shadow: rgba(0, 0, 0, 0.45);
-  --chart-night-wash: rgba(237, 234, 224, 0.06);
-  --status-warn-muted: rgba(217, 139, 63, 0.35);
-  --accent-info-muted: rgba(91, 155, 209, 0.1);
-  --status-ok-muted: rgba(124, 179, 99, 0.12);
-  --status-critical-muted: rgba(210, 98, 74, 0.12);
-  --error-surface: rgba(210, 98, 74, 0.08);
+  --text-primary: var(--parchment);
+  --text-secondary: var(--heather-text);
+  --text-disabled: color-mix(in srgb, var(--heather-text) 55%, transparent);
+  --text-highlight: var(--apricot);
 
-  /* Multi-segment chart palette (token refs, not independent hues) */
+  --accent-info: var(--heather);
+  --band-in: var(--vine);
+  --band-out: color-mix(in srgb, var(--oxblood) 70%, var(--cellar));
+  --chart-line: var(--parchment);
+  --chart-band-fill: color-mix(in srgb, var(--vine) 14%, transparent);
+  --focus-ring: var(--apricot);
+
+  --shadow-ink: #140604;
+  --overlay: color-mix(in srgb, var(--cellar) 72%, transparent);
+  --shadow: color-mix(in srgb, var(--oxblood) 55%, var(--shadow-ink));
+  --shadow-warm: 0 18px 48px -12px color-mix(in srgb, var(--shadow-ink) 55%, var(--oxblood));
+  --shadow-warm-l2: 0 28px 64px -14px color-mix(in srgb, var(--shadow-ink) 65%, var(--oxblood));
+  --chart-night-wash: color-mix(in srgb, var(--parchment) 6%, transparent);
+  --status-warn-muted: color-mix(in srgb, var(--terracotta) 35%, transparent);
+  --accent-info-muted: color-mix(in srgb, var(--heather) 12%, transparent);
+  --status-ok-muted: color-mix(in srgb, var(--vine) 12%, transparent);
+  --status-critical-muted: color-mix(in srgb, var(--terracotta) 12%, transparent);
+  --error-surface: color-mix(in srgb, var(--terracotta) 8%, transparent);
+
   --chart-segment-1: var(--chart-line);
-  --chart-segment-2: var(--accent-info);
-  --chart-segment-3: var(--status-watch);
-  --chart-segment-4: var(--text-secondary);
+  --chart-segment-2: var(--apricot);
+  --chart-segment-3: var(--heather);
+  --chart-segment-4: var(--heather-text);
 
-  /* Per-type event marker colours — sourced from semantic tokens where they
-     match meaning; unique hues live here so components stay literal-free. */
-  --event-irrigation: var(--accent-info);
-  --event-fertiliser: var(--status-ok);
-  --event-pruning: var(--status-warn);
-  --event-transplant: var(--text-secondary);
-  --event-pest-observation: var(--status-watch);
-  --event-pest-treatment: var(--status-critical);
+  --event-irrigation: var(--apricot);
+  --event-fertiliser: var(--vine);
+  --event-pruning: var(--terracotta);
+  --event-transplant: var(--heather-text);
+  --event-pest-observation: var(--apricot);
+  --event-pest-treatment: var(--terracotta);
   --event-harvest: #9b7bb8;
   --event-calibration: #5ba89a;
-  --event-maintenance: var(--status-warn);
-  --event-stage-change: var(--text-secondary);
+  --event-maintenance: var(--terracotta);
+  --event-stage-change: var(--heather-text);
   --event-observation: var(--text-disabled);
+
+  /* Glass recipe ingredients */
+  --glass-fill-l1: color-mix(in srgb, var(--cellar-raised) 55%, transparent);
+  --glass-fill-l2: color-mix(in srgb, var(--cellar-raised) 62%, transparent);
+  --glass-fill-l3: color-mix(in srgb, var(--cellar-raised) 78%, transparent);
+  --glass-fill-opaque: var(--cellar-raised);
+  --glass-reading-zone: color-mix(in srgb, var(--cellar-raised) 88%, transparent);
+  --glass-border: color-mix(in srgb, var(--apricot) 10%, transparent);
+  --glass-rim: color-mix(in srgb, var(--apricot) 22%, transparent);
+  --glass-inset: color-mix(in srgb, var(--parchment) 8%, transparent);
+  --glass-blur-l1: 20px;
+  --glass-blur-l2: 28px;
+  --glass-blur-l3: 36px;
+  /* Linux WebKitGTK fallback when frame times suffer (brief: lower L1 first) */
+  --glass-blur-l1-low: 12px;
+  --radius-l1: 16px;
+  --radius-l2: 24px;
+  --radius-l3: 28px;
+
+  /* Type scale (1.25 ratio): 12, 14, 16, 20, 25, 31, 39, 49 */
+  --text-xs: 0.75rem; /* 12 */
+  --text-sm: 0.875rem; /* 14 */
+  --text-base: 1rem; /* 16 */
+  --text-md: 1.25rem; /* 20 */
+  --text-lg: 1.5625rem; /* 25 */
+  --text-xl: 1.9375rem; /* 31 */
+  --text-2xl: 2.4375rem; /* 39 */
+  --text-3xl: 3.0625rem; /* 49 */
+  --space-gutter: 24px;
+  --space-gutter-mobile: 16px;
+  --target-min: 44px;
+
+  /* Weather horizon sky band (Cellar dusk family)
+   * night: deep heather over oxblood
+   * dawn: apricot
+   * day: lifted apricot/heather mix
+   * dusk: terracotta
+   */
+  --sky-day: color-mix(in srgb, var(--apricot) 68%, var(--heather));
+  --sky-dawn: color-mix(in srgb, var(--apricot) 82%, var(--terracotta));
+  --sky-dusk: color-mix(in srgb, var(--terracotta) 72%, var(--oxblood));
+  --sky-night: color-mix(in srgb, var(--heather) 42%, var(--oxblood));
+  --sky-overcast: color-mix(in srgb, var(--apricot) 28%, var(--heather));
+  --sky-precip: color-mix(in srgb, var(--heather) 55%, var(--parchment));
+  --sky-temp-line: var(--parchment);
+  --sky-sun-path: color-mix(in srgb, var(--apricot) 70%, transparent);
+  --sky-now-marker: var(--apricot);
+
+  /* Motion */
+  --motion-fast: 120ms;
+  --motion-short: 300ms;
+  --motion-medium: 350ms;
+  --motion-reading: 400ms;
+  --motion-glow: 800ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.45, 0, 0.55, 1);
 
   color-scheme: dark;
   background-color: var(--canvas);
@@ -69,42 +143,40 @@
   transition: background-color 150ms, color 150ms;
 }
 
+/*
+ * Light theme: constrained parchment field, still Cellar hues.
+ * Body text stays on opaque surfaces for AA contrast.
+ */
 [data-theme="light"] {
-  /* —— Light theme — "field" —— */
-  --canvas: #f5f2e9;
-  --surface-1: #ffffff;
-  --surface-2: #fbf9f2;
-  --border: #dad5c5;
-  --border-strong: #b8b2a0;
-
-  --text-primary: #2a2820;
-  --text-secondary: #5c594c;
-  --text-disabled: #9a9585;
-
-  --status-ok: #4f7a3a;
-  --status-watch: #8c6a1e;
-  --status-warn: #a85f1f;
-  --status-critical: #a83a24;
-  --status-unknown: #6b6759;
-  --accent-info: #2e6fa8;
-
-  --band-in: #4f7a3a;
-  --band-out: #d9a99a;
-  --chart-line: #2a2820;
-  --chart-band-fill: rgba(79, 122, 58, 0.16);
-  --focus-ring: #2e6fa8;
-
-  --overlay: rgba(42, 40, 32, 0.45);
-  --shadow: rgba(42, 40, 32, 0.18);
-  --chart-night-wash: rgba(42, 40, 32, 0.06);
-  --status-warn-muted: rgba(168, 95, 31, 0.35);
-  --accent-info-muted: rgba(46, 111, 168, 0.1);
-  --status-ok-muted: rgba(79, 122, 58, 0.12);
-  --status-critical-muted: rgba(168, 58, 36, 0.1);
-  --error-surface: rgba(168, 58, 36, 0.08);
-
+  --canvas: #fff4ea;
+  --cellar: #fff4ea;
+  --cellar-raised: #f7e6d6;
+  --parchment: #1f1113;
+  --heather-text: #5c4f66;
+  --text-primary: #1f1113;
+  --text-secondary: #5c4f66;
+  --text-disabled: color-mix(in srgb, #5c4f66 55%, transparent);
+  --text-highlight: #8a2b0e;
+  --surface-1: #f7e6d6;
+  --surface-2: #f0dcc8;
+  --border: color-mix(in srgb, #8a2b0e 18%, transparent);
+  --border-strong: color-mix(in srgb, #8a2b0e 32%, transparent);
+  --focus-ring: #8a2b0e;
+  --chart-line: #1f1113;
+  --chart-band-fill: color-mix(in srgb, var(--vine) 18%, transparent);
+  --overlay: color-mix(in srgb, #1f1113 45%, transparent);
+  --shadow: color-mix(in srgb, #8a2b0e 22%, transparent);
+  --shadow-warm: 0 18px 48px -12px color-mix(in srgb, #8a2b0e 28%, transparent);
+  --chart-night-wash: color-mix(in srgb, #1f1113 6%, transparent);
+  --glass-fill-l1: color-mix(in srgb, #f7e6d6 70%, transparent);
+  --glass-fill-l2: color-mix(in srgb, #f7e6d6 78%, transparent);
+  --glass-fill-l3: color-mix(in srgb, #f7e6d6 88%, transparent);
+  --glass-fill-opaque: #f7e6d6;
+  --glass-reading-zone: color-mix(in srgb, #f7e6d6 92%, transparent);
+  --glass-border: color-mix(in srgb, #8a2b0e 12%, transparent);
+  --glass-rim: color-mix(in srgb, #e35336 22%, transparent);
+  --glass-inset: color-mix(in srgb, #ffffff 40%, transparent);
   --event-harvest: #7a5a96;
   --event-calibration: #3d8a7a;
-
   color-scheme: light;
 }

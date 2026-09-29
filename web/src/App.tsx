@@ -4,7 +4,10 @@ import {
   Alerts,
   AlertPollProvider,
   Dashboard,
+  DesignSystem,
   History,
+  ReduceMotionToggle,
+  ReduceTransparencyToggle,
   Reports,
   ThemeToggle,
   type MetricKey,
@@ -33,6 +36,7 @@ const NAV: { id: WebNavView; label: string }[] = [
   { id: "alerts", label: "Alerts" },
   { id: "soil-tests", label: "Soil tests" },
   { id: "observations", label: "Observations" },
+  { id: "design", label: "Design" },
 ];
 
 function readRoute(): WebRoute {
@@ -58,6 +62,8 @@ function navigateTo(go: (next: WebRoute) => void, item: WebNavView, route: WebRo
     });
   } else if (item === "alerts") {
     go({ view: "alerts" });
+  } else if (item === "design") {
+    go({ view: "design" });
   } else {
     go({ view: item } as WebRoute);
   }
@@ -159,6 +165,7 @@ function AppShell() {
 
   return (
     <AlertPollProvider>
+      <div className="sky-backdrop" aria-hidden="true" />
       <main className="app">
         <OfflineBanner />
 
@@ -204,6 +211,8 @@ function AppShell() {
           {renderNavButtons("app-nav-drawer-link")}
           <div className="app-nav-drawer-tools">
             <DevicePicker />
+            <ReduceTransparencyToggle />
+            <ReduceMotionToggle />
             <button
               type="button"
               className="app-nav-drawer-link app-nav-drawer-signout"
@@ -224,6 +233,8 @@ function AppShell() {
           {renderNavButtons("app-nav-btn")}
           <span className="app-nav-spacer" />
           <DevicePicker />
+          <ReduceTransparencyToggle />
+          <ReduceMotionToggle />
           <ThemeToggle />
           <button
             type="button"
@@ -278,6 +289,7 @@ function AppShell() {
           />
         )}
         {route.view === "alerts" && <Alerts />}
+        {route.view === "design" && <DesignSystem />}
         {route.view === "soil-tests" && <SoilTests />}
         {route.view === "observations" && <Observations />}
       </main>

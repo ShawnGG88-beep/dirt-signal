@@ -21,10 +21,11 @@ from dotenv import load_dotenv
 from supabase import Client, create_client
 
 from camera.base import Camera
-from camera.factory import CameraMode, build_camera
-from camera.picamera_capture import (
+from camera.factory import (
     DEFAULT_CAPTURE_HEIGHT,
     DEFAULT_CAPTURE_WIDTH,
+    CameraMode,
+    build_camera,
 )
 from sensors.factory import SensorMode, build_sensors
 
@@ -115,6 +116,39 @@ def resolve_device(client: Client, device_name: str) -> dict[str, str]:
 
 def resolve_device_id(client: Client, device_name: str) -> str:
     return resolve_device(client, device_name)["id"]
+
+
+def sync_sensor_modes(
+    client: Client,
+    device_id: str,
+    *,
+    moisture_mode: str,
+    ph_mode: str,
+    ds18b20_mode: str,
+    dht22_mode: str,
+    npk_mode: str,
+) -> None:
+    """Mirror config.yaml *_mode flags onto devices for dashboard Simulated badges."""
+
+    def _norm(value: str) -> str:
+        v = str(value).strip().lower()
+        if v not in ("mock", "real"):
+            raise ValueError(f"sensor mode must be mock|real, got {value!r}")
+        return v
+
+    patch = {
+        "moisture_mode": _norm(moisture_mode),
+        "ph_mode": _norm(ph_mode),
+        "ds18b20_mode": _norm(ds18b20_mode),
+        "dht22_mode": _norm(dht22_mode),
+        "npk_mode": _norm(npk_mode),
+    }
+    client.table("devices").update(patch).eq("id", device_id).execute()
+    logger.info(
+        "Synced sensor modes for device %s: %s",
+        device_id,
+        patch,
+    )
 
 
 def collect_reading(
@@ -318,6 +352,20 @@ def run() -> None:
     client = get_supabase()
     device = resolve_device(client, device_name)
     device_id = device["id"]
+    try:
+        sync_sensor_modes(
+            client,
+            device_id,
+            moisture_mode=moisture_mode,
+            ph_mode=ph_mode,
+            ds18b20_mode=ds18b20_mode,
+            dht22_mode=dht22_mode,
+            npk_mode=npk_mode,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to sync sensor modes onto devices row; continuing"
+        )
     moisture, ph, ambient, soil_temp, npk = build_sensors(
         ds18b20_mode=ds18b20_mode,
         dht22_mode=dht22_mode,

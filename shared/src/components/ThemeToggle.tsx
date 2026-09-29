@@ -13,12 +13,14 @@ export function ThemeToggle() {
   const label = themePreferenceLabel(preference);
   const glyph =
     preference === "dark" ? "☾" : preference === "light" ? "☀" : "◐";
+  const pressed = preference !== "system";
 
   return (
     <button
       type="button"
       className="theme-toggle"
       onClick={() => cycleThemePreference()}
+      aria-pressed={pressed}
       aria-label={`${label}. Click to cycle theme.`}
       title={label}
     >

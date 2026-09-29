@@ -45,6 +45,11 @@ class LatestReadingResponse(BaseModel):
     cultivar: str | None = None
     soil_field_capacity_raw: float | None = None
     soil_refill_point_raw: float | None = None
+    moisture_mode: str | None = None
+    ph_mode: str | None = None
+    ds18b20_mode: str | None = None
+    dht22_mode: str | None = None
+    npk_mode: str | None = None
 
 
 class ReadingsRangeResponse(BaseModel):
@@ -62,6 +67,11 @@ class ReadingsRangeResponse(BaseModel):
     cultivar: str | None = None
     soil_field_capacity_raw: float | None = None
     soil_refill_point_raw: float | None = None
+    moisture_mode: str | None = None
+    ph_mode: str | None = None
+    ds18b20_mode: str | None = None
+    dht22_mode: str | None = None
+    npk_mode: str | None = None
 
 
 class DeviceProfileUpdate(BaseModel):
@@ -86,6 +96,11 @@ class DeviceResponse(BaseModel):
     cultivar: str | None = None
     soil_field_capacity_raw: float | None = None
     soil_refill_point_raw: float | None = None
+    moisture_mode: str | None = None
+    ph_mode: str | None = None
+    ds18b20_mode: str | None = None
+    dht22_mode: str | None = None
+    npk_mode: str | None = None
 
 
 class DailyAggregateRow(BaseModel):

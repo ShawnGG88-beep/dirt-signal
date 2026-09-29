@@ -4,7 +4,7 @@
  * hex invariant in shared/src/styles/tokens.css spans this file too.
  */
 
-/* —— Login —— */
+/* Login */
 
 .login-screen {
   min-height: 100vh;
@@ -35,7 +35,7 @@
   min-height: 44px;
 }
 
-/* —— Nav additions (desktop row) —— */
+/* Nav additions (desktop row) */
 
 .app-nav-spacer {
   flex: 1;
@@ -64,7 +64,7 @@
   }
 }
 
-/* —— Mobile shell: compact bar + drawer (web only) —— */
+/* Mobile shell: compact bar + drawer (web only) */
 
 .visually-hidden {
   position: absolute;
@@ -84,7 +84,7 @@
   display: none;
 }
 
-/* —— Offline state —— */
+/* Offline state */
 
 .offline-banner {
   border: 2px solid var(--status-critical);
@@ -95,7 +95,7 @@
   font-size: 0.85rem;
 }
 
-/* —— Soil tests —— */
+/* Soil tests */
 
 .soil-test-form {
   background: var(--surface-1);
@@ -111,7 +111,7 @@
   vertical-align: top;
 }
 
-/* —— Observations —— */
+/* Observations */
 
 .observations-note {
   font-size: 0.78rem;
@@ -313,8 +313,6 @@
     font-family: inherit;
     font-size: 1rem;
     line-height: 1.5;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
     text-align: left;
     cursor: pointer;
   }
