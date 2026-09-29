@@ -28,3 +28,7 @@ pi-collector/captures/
 
 # Logs
 *.log
+
+# Never track slicer output or casual root test assets
+*.gcode
+/test.jpg
